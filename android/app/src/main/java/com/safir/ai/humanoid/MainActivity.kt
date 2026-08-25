@@ -6,9 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
@@ -38,15 +36,22 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(Color(0xFF102448))
                 ) {
-                    Column(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text("SAFIR AI", color = Color.White)
-                        Text("Persistent avatar surface", color = Color(0xFFB9D8FF))
-                        Text(state.name, color = Color(0xFF7FDBFF), modifier = Modifier.padding(top = 10.dp))
-                    }
+                    // This is intentionally kept mounted for the lifetime of the screen.
+                    // Once the durable HeyGen MP4 URLs/files are resolved, state changes only
+                    // replace the media item; the avatar surface itself never disappears.
+                    MotionPlayer(
+                        mediaUri = null,
+                        loop = state == AvatarState.IDLE || state == AvatarState.LISTENING,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    Text(
+                        text = state.name,
+                        color = Color(0xFFB9D8FF),
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 24.dp)
+                    )
 
                     FloatingActionButton(
                         onClick = {
