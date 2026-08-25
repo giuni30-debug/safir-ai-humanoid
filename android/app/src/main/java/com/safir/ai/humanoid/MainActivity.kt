@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
 
             val mainHandler = remember { Handler(Looper.getMainLooper()) }
             val aiClient = remember { AiReplyClient() }
+            val memoryClient = remember { HumanoidMemoryClient() }
 
             fun applyVoiceEvent(
                 event: VoiceSyncEvent,
@@ -137,9 +138,12 @@ class MainActivity : ComponentActivity() {
                     state = AvatarState.THINKING
                     motion = MotionEngine.primaryFor(AvatarState.THINKING)
 
+                    memoryClient.storeTurn("user", text)
+
                     aiClient.request(
                         text = text,
                         onSuccess = { result ->
+                            memoryClient.storeTurn("assistant", result.reply)
                             runOnUiThread {
                                 pendingBehavior = result.behavior
                                 suppressClientError = false
