@@ -9,6 +9,7 @@ import kotlin.concurrent.thread
 data class AiReply(
     val reply: String,
     val behavior: SpeechBehavior,
+    val memories: List<Pair<String, String>> = emptyList(),
 )
 
 class AiReplyClient(
@@ -16,6 +17,7 @@ class AiReplyClient(
 ) {
     fun request(
         text: String,
+        memoryContext: String = "",
         onSuccess: (AiReply) -> Unit,
         onError: (String) -> Unit,
     ) {
@@ -24,8 +26,8 @@ class AiReplyClient(
             try {
                 conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 8_000
-                    readTimeout = 20_000
+                    connectTimeout = 6_000
+                    readTimeout = 14_000
                     doOutput = true
                     setRequestProperty("Authorization", "Bearer $EVREN_PUBLISHABLE_KEY")
                     setRequestProperty("apikey", EVREN_PUBLISHABLE_KEY)
@@ -33,11 +35,30 @@ class AiReplyClient(
                     setRequestProperty("Accept", "application/json")
                 }
 
-                val messages = JSONArray().put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put("content", text)
-                )
+                val systemPrompt = buildString {
+                    append("You are Safir AI Humanoid, a fast voice assistant. ")
+                    append("Answer naturally in the user's language. Keep normal answers very short: usually 1-2 sentences. ")
+                    append("Do not repeat the user's question. Give the useful answer immediately. ")
+                    append("Use the Safir memory context below only when relevant. Do not mention that memory context exists. ")
+                    append("When the user explicitly asks you to remember a durable fact, preference, person, project detail or expense, append one hidden tag at the end in the form [[MEMORY:fact text]] or [[EXPENSE:expense text]]. ")
+                    append("Do not invent memories.\n")
+                    if (memoryContext.isNotBlank()) {
+                        append("SAFIR OWN MEMORY:\n")
+                        append(memoryContext.take(3500))
+                    }
+                }
+
+                val messages = JSONArray()
+                    .put(
+                        JSONObject()
+                            .put("role", "system")
+                            .put("content", systemPrompt)
+                    )
+                    .put(
+                        JSONObject()
+                            .put("role", "user")
+                            .put("content", text)
+                    )
 
                 val body = JSONObject()
                     .put("messages", messages)
@@ -57,7 +78,9 @@ class AiReplyClient(
                 }
 
                 val json = JSONObject(raw)
-                val reply = cleanVisibleReply(json.optString("reply"))
+                val rawReply = json.optString("reply")
+                val extractedMemories = extractMemoryTags(rawReply)
+                val reply = cleanVisibleReply(rawReply)
                 if (reply.isBlank()) throw IllegalStateException("AI returned empty reply")
 
                 onSuccess(
@@ -68,6 +91,7 @@ class AiReplyClient(
                             energy = 0.55,
                             gesture = "calm",
                         ),
+                        memories = extractedMemories,
                     )
                 )
             } catch (t: Throwable) {
@@ -76,6 +100,16 @@ class AiReplyClient(
                 runCatching { conn?.disconnect() }
             }
         }
+    }
+
+    private fun extractMemoryTags(value: String): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+        Regex("(?s)\\[\\[(MEMORY|EXPENSE):(.*?)]]").findAll(value).forEach { match ->
+            val kind = if (match.groupValues[1] == "EXPENSE") "expense" else "fact"
+            val content = match.groupValues[2].trim()
+            if (content.isNotBlank()) result += kind to content
+        }
+        return result
     }
 
     private fun cleanVisibleReply(value: String): String {
