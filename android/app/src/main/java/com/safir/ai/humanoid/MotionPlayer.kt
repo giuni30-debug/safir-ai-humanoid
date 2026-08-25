@@ -5,9 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -18,17 +20,51 @@ import androidx.media3.ui.PlayerView
  *
  * The player instance survives state changes so the avatar surface is never
  * replaced by another screen. Motion selection only swaps MediaItems.
+ *
+ * Playback callbacks expose real Media3 events to the voice/state layer. They
+ * must be preferred over guessed delays when synchronizing state transitions.
  */
 @Composable
 fun MotionPlayer(
     mediaUri: String?,
     loop: Boolean,
     modifier: Modifier = Modifier,
+    onPlaybackStarted: () -> Unit = {},
+    onPlaybackEnded: () -> Unit = {},
+    onPlaybackError: (PlaybackException) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val currentOnPlaybackStarted = rememberUpdatedState(onPlaybackStarted)
+    val currentOnPlaybackEnded = rememberUpdatedState(onPlaybackEnded)
+    val currentOnPlaybackError = rememberUpdatedState(onPlaybackError)
+
     val player = remember {
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
+        }
+    }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) currentOnPlaybackStarted.value.invoke()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    currentOnPlaybackEnded.value.invoke()
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                currentOnPlaybackError.value.invoke(error)
+            }
+        }
+
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
         }
     }
 
@@ -39,11 +75,9 @@ fun MotionPlayer(
             player.setMediaItem(MediaItem.fromUri(Uri.parse(mediaUri)))
             player.prepare()
             player.play()
+        } else {
+            player.clearMediaItems()
         }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose { player.release() }
     }
 
     AndroidView(
