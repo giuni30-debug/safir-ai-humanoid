@@ -27,9 +27,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import io.livekit.android.renderer.SurfaceViewRenderer
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -49,10 +52,12 @@ class MainActivity : ComponentActivity() {
             var recognitionActive by remember { mutableStateOf(false) }
             var suppressClientError by remember { mutableStateOf(false) }
             var pendingBehavior by remember { mutableStateOf(SpeechBehavior()) }
+            var liveAvatarVisible by remember { mutableStateOf(false) }
 
             val mainHandler = remember { Handler(Looper.getMainLooper()) }
             val aiClient = remember { AiReplyClient() }
             val memoryClient = remember { HumanoidMemoryClient() }
+            val liveAvatarClient = remember { LiveAvatarClient(this) }
             val humanoidVideoUri = remember {
                 "android.resource://$packageName/${R.raw.safir_humanoid_mars}"
             }
@@ -81,6 +86,34 @@ class MainActivity : ComponentActivity() {
 
             val speechRecognizer = remember {
                 if (SpeechRecognizer.isRecognitionAvailable(this)) SpeechRecognizer.createSpeechRecognizer(this) else null
+            }
+
+            DisposableEffect(liveAvatarClient) {
+                // Safir 4K Robot photo-avatar look. If LiveAvatar does not accept this
+                // identity, the local Mars video stays visible and the voice path keeps working.
+                liveAvatarClient.connect(
+                    avatarId = "d1627d8c38e24bdcbf849b09ce914282",
+                    onVideoReady = {
+                        runOnUiThread {
+                            liveAvatarVisible = true
+                            lastError = null
+                        }
+                    },
+                    onDisconnected = {
+                        runOnUiThread { liveAvatarVisible = false }
+                    },
+                    onError = { message ->
+                        runOnUiThread {
+                            liveAvatarVisible = false
+                            lastError = message
+                        }
+                    },
+                )
+
+                onDispose {
+                    liveAvatarVisible = false
+                    liveAvatarClient.release()
+                }
             }
 
             DisposableEffect(speechRecognizer, ttsPlayer) {
@@ -301,10 +334,24 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(Color.Black)
                 ) {
+                    // Always-on local fallback. It remains underneath the realtime renderer,
+                    // so a provider disconnect never leaves the user with a black screen.
                     MotionPlayer(
                         mediaUri = humanoidVideoUri,
                         loop = true,
                         modifier = Modifier.fillMaxSize(),
+                    )
+
+                    AndroidView(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(if (liveAvatarVisible) 1f else 0f),
+                        factory = { context ->
+                            SurfaceViewRenderer(context).also { renderer ->
+                                renderer.setZOrderMediaOverlay(true)
+                                liveAvatarClient.attachRenderer(renderer)
+                            }
+                        },
                     )
 
                     FloatingActionButton(
