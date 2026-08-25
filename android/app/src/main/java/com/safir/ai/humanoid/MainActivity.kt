@@ -175,7 +175,7 @@ class MainActivity : ComponentActivity() {
                                 val candidate = latestPartial
                                 val runnable = Runnable { dispatchRecognized(candidate) }
                                 fallbackRunnable = runnable
-                                mainHandler.postDelayed(runnable, 450L)
+                                mainHandler.postDelayed(runnable, 120L)
                             }
                         }
                     }
@@ -293,7 +293,7 @@ class MainActivity : ComponentActivity() {
                             when (state) {
                                 AvatarState.SPEAKING, AvatarState.THINKING -> {
                                     ttsPlayer.interrupt()
-                                    mainHandler.postDelayed({ ensureMicThenListen() }, 120L)
+                                    mainHandler.postDelayed({ ensureMicThenListen() }, 80L)
                                 }
                                 AvatarState.LISTENING -> stopListeningToIdle()
                                 else -> ensureMicThenListen()
