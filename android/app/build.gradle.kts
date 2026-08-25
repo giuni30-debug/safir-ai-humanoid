@@ -39,6 +39,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-ui:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     // HeyGen LiveAvatar returns a LiveKit room URL + participant token.
     // LiveKit is therefore the realtime video transport for the speaking avatar.
