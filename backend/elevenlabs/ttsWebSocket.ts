@@ -1,3 +1,5 @@
+import WebSocket from "ws";
+
 type Alignment = {
   chars: string[];
   char_start_times_ms: number[];
@@ -27,9 +29,6 @@ export type ElevenLabsTtsOptions = {
 
 /**
  * Backend-only ElevenLabs realtime TTS session.
- *
- * Official protocol:
- * wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input
  *
  * Security rule: ELEVENLABS_API_KEY is read only from the backend environment.
  * It must never be sent to or embedded in the Android client.
@@ -64,14 +63,14 @@ export class ElevenLabsTtsSession {
 
     this.socket = new WebSocket(url, {
       headers: { "xi-api-key": apiKey },
-    } as never);
+    });
 
     await new Promise<void>((resolve, reject) => {
-      if (!this.socket) return reject(new Error("WebSocket not created"));
+      const socket = this.socket;
+      if (!socket) return reject(new Error("WebSocket not created"));
 
-      this.socket.addEventListener("open", () => {
-        // ElevenLabs requires the first message to initialize the stream.
-        this.socket?.send(
+      socket.once("open", () => {
+        socket.send(
           JSON.stringify({
             text: " ",
             generation_config: {
@@ -82,9 +81,9 @@ export class ElevenLabsTtsSession {
         resolve();
       });
 
-      this.socket.addEventListener("message", (event) => {
+      socket.on("message", (data) => {
         try {
-          const frame = JSON.parse(String(event.data)) as ElevenLabsFrame;
+          const frame = JSON.parse(data.toString()) as ElevenLabsFrame;
 
           if (frame.audio) {
             this.emit({
@@ -105,9 +104,9 @@ export class ElevenLabsTtsSession {
         }
       });
 
-      this.socket.addEventListener("error", () => {
-        this.emit({ type: "error", message: "ElevenLabs WebSocket error" });
-        reject(new Error("ElevenLabs WebSocket error"));
+      socket.once("error", (error) => {
+        this.emit({ type: "error", message: error.message });
+        reject(error);
       });
     });
   }
@@ -118,15 +117,11 @@ export class ElevenLabsTtsSession {
     }
 
     if (!text) return;
-
-    // For realtime conversational turns, official guidance recommends flush=true
-    // with the last text chunk so buffered text is synthesized promptly.
     this.socket.send(JSON.stringify({ text, flush }));
   }
 
   keepAlive(): void {
     if (this.closed || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-    // A single space keeps the TTS WebSocket alive; an empty string closes it.
     this.socket.send(JSON.stringify({ text: " " }));
   }
 
@@ -135,7 +130,6 @@ export class ElevenLabsTtsSession {
     this.closed = true;
 
     if (this.socket?.readyState === WebSocket.OPEN) {
-      // Empty text tells the ElevenLabs TTS WebSocket to close after pending audio.
       this.socket.send(JSON.stringify({ text: "" }));
     }
   }
