@@ -23,6 +23,13 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Fetch Safir humanoid Mars video
+        run: |
+          mkdir -p android/app/src/main/res/raw
+          curl --fail --location --retry 3 \
+            'https://files2.heygen.ai/aws_pacific/avatar_tmp/c9ff2ee1fa774b72867af9af69c824cd/v6d2c644a0057413bb8a8dc0ab2d34fac/cf931c33d3684e1584dfb27522e53769.mp4?Expires=1788290527&Signature=ewTwldvHVX3kX7k0Du~gitCC1qktm6lnskjL-zby46Hv3EzL7CSS24frW6ZGe65Dc666vcjYunK3P9aYnKsI~09OuoJsmj00BhrZ2I7diDreaFilQtU7jni1F181h20Ekx03gWdphOFa~2JY6g8AHvWL3e4rLvss8PMKwEgCDNLXfXZ109JD7w-v-oOco6Gq7zT0o2ErCkwSSDcYV-8Y4dwtzE9W3xseEBUANeX55tzvOtjXlMQzNvP44A3dRmXukAxIf2rAKNDBorEXMwvv1ewe0JPq~-jD6gut7ffTGOkb5TTtp8zyF9ha4BWtBsLSdk3dJeN4q~2XQn-FP2wb1w__&Key-Pair-Id=K38HBHX5LX3X2H' \
+            --output android/app/src/main/res/raw/safir_humanoid_mars.mp4
+
       - name: Build debug APK
         run: gradle :android:app:assembleDebug --stacktrace
 
