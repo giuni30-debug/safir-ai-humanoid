@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
@@ -53,6 +54,14 @@ class MainActivity : ComponentActivity() {
             var suppressClientError by remember { mutableStateOf(false) }
             var pendingBehavior by remember { mutableStateOf(SpeechBehavior()) }
             var liveAvatarVisible by remember { mutableStateOf(false) }
+            var diagStt by remember { mutableStateOf("idle") }
+            var diagMemory by remember { mutableStateOf("idle") }
+            var diagAi by remember { mutableStateOf("idle") }
+            var diagTts by remember { mutableStateOf("idle") }
+            var diagHeygen by remember { mutableStateOf("connecting") }
+            var diagLivekit by remember { mutableStateOf("waiting") }
+            var diagWs by remember { mutableStateOf("waiting") }
+            var diagPcmChunks by remember { mutableStateOf(0) }
 
             val mainHandler = remember { Handler(Looper.getMainLooper()) }
             val aiClient = remember { AiReplyClient() }
@@ -73,13 +82,42 @@ class MainActivity : ComponentActivity() {
 
             val ttsPlayer = remember {
                 TtsHttpPcmPlayer(
-                    onEvent = { event -> runOnUiThread { applyVoiceEvent(event) } },
-                    onPcmStart = { liveAvatarClient.beginSpeech() },
-                    onPcmChunk = { pcm -> liveAvatarClient.pushSpeechPcm(pcm) },
-                    onPcmEnd = { liveAvatarClient.endSpeech() },
-                    onPcmInterrupt = { liveAvatarClient.interruptSpeech() },
+                    onEvent = { event ->
+                        runOnUiThread {
+                            applyVoiceEvent(event)
+                            diagTts = when (event) {
+                                VoiceSyncEvent.TURN_STARTED -> "requesting"
+                                VoiceSyncEvent.FIRST_AUDIO_FRAME -> "audio playing"
+                                VoiceSyncEvent.AUDIO_COMPLETED -> "completed"
+                                VoiceSyncEvent.INTERRUPTED -> "interrupted"
+                            }
+                        }
+                    },
+                    onPcmStart = {
+                        runOnUiThread {
+                            diagPcmChunks = 0
+                            diagWs = if (liveAvatarClient.isControlConnected) "sending speech" else "not connected"
+                        }
+                        liveAvatarClient.beginSpeech()
+                    },
+                    onPcmChunk = { pcm ->
+                        liveAvatarClient.pushSpeechPcm(pcm)
+                        runOnUiThread {
+                            diagPcmChunks += 1
+                            diagWs = if (liveAvatarClient.isControlConnected) "PCM -> WS" else "PCM local only"
+                        }
+                    },
+                    onPcmEnd = {
+                        liveAvatarClient.endSpeech()
+                        runOnUiThread { diagWs = if (liveAvatarClient.isControlConnected) "speech ended" else "not connected" }
+                    },
+                    onPcmInterrupt = {
+                        liveAvatarClient.interruptSpeech()
+                        runOnUiThread { diagWs = "interrupted" }
+                    },
                     onError = { message ->
                         runOnUiThread {
+                            diagTts = "ERROR: $message"
                             lastError = message
                             state = AvatarState.IDLE
                             motion = MotionEngine.primaryFor(AvatarState.IDLE)
@@ -93,20 +131,36 @@ class MainActivity : ComponentActivity() {
             }
 
             DisposableEffect(liveAvatarClient) {
+                diagHeygen = "requesting session"
                 liveAvatarClient.connect(
                     avatarId = "d1627d8c38e24bdcbf849b09ce914282",
+                    onReady = {
+                        runOnUiThread {
+                            diagHeygen = "session OK"
+                            diagLivekit = "room connected"
+                            diagWs = if (liveAvatarClient.isControlConnected) "connected" else "socket opening"
+                        }
+                    },
                     onVideoReady = {
                         runOnUiThread {
                             liveAvatarVisible = true
+                            diagLivekit = "VIDEO READY"
+                            diagWs = if (liveAvatarClient.isControlConnected) "connected" else "waiting state"
                             lastError = null
                         }
                     },
                     onDisconnected = {
-                        runOnUiThread { liveAvatarVisible = false }
+                        runOnUiThread {
+                            liveAvatarVisible = false
+                            diagLivekit = "disconnected"
+                        }
                     },
                     onError = { message ->
                         runOnUiThread {
                             liveAvatarVisible = false
+                            diagHeygen = "ERROR"
+                            diagLivekit = "fallback local"
+                            diagWs = "not available"
                             lastError = message
                         }
                     },
@@ -140,17 +194,24 @@ class MainActivity : ComponentActivity() {
                     recognitionActive = false
                     runCatching { speechRecognizer?.cancel() }
                 }
+                diagStt = "stopped"
                 resetToIdle()
             }
 
             fun startListening() {
                 if (speechRecognizer == null) {
+                    diagStt = "ERROR unavailable"
                     lastError = "Speech recognition unavailable on this device"
                     return
                 }
                 if (recognitionActive) return
 
                 lastError = null
+                diagStt = "listening"
+                diagMemory = "idle"
+                diagAi = "idle"
+                diagTts = "idle"
+                diagPcmChunks = 0
                 suppressClientError = false
                 recognitionActive = true
                 state = AvatarState.LISTENING
@@ -172,6 +233,7 @@ class MainActivity : ComponentActivity() {
                     if (turnDispatched) return
                     val text = rawText.trim()
                     if (text.isBlank()) {
+                        diagStt = "empty"
                         resetToIdle()
                         return
                     }
@@ -181,12 +243,18 @@ class MainActivity : ComponentActivity() {
                     recognitionActive = false
                     suppressClientError = true
                     runCatching { speechRecognizer.stopListening() }
+                    diagStt = "OK: ${text.take(42)}"
+                    diagMemory = "storing/fetching"
                     state = AvatarState.THINKING
                     motion = MotionEngine.primaryFor(AvatarState.THINKING)
 
                     memoryClient.storeTurn("user", text)
 
                     fun requestAi(memoryContext: String) {
+                        runOnUiThread {
+                            diagMemory = if (memoryContext.isBlank()) "empty/fallback" else "OK"
+                            diagAi = "requesting"
+                        }
                         aiClient.request(
                             text = text,
                             memoryContext = memoryContext,
@@ -196,6 +264,7 @@ class MainActivity : ComponentActivity() {
                                     memoryClient.storeMemory(kind, content)
                                 }
                                 runOnUiThread {
+                                    diagAi = "OK: ${result.reply.take(42)}"
                                     pendingBehavior = result.behavior
                                     suppressClientError = false
                                     ttsPlayer.speak(result.reply)
@@ -203,6 +272,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onError = { message ->
                                 runOnUiThread {
+                                    diagAi = "ERROR: $message"
                                     suppressClientError = false
                                     lastError = message
                                     resetToIdle()
@@ -213,7 +283,10 @@ class MainActivity : ComponentActivity() {
 
                     memoryClient.fetchContext(
                         onSuccess = { context -> requestAi(context) },
-                        onError = { requestAi("") },
+                        onError = {
+                            runOnUiThread { diagMemory = "ERROR -> fallback" }
+                            requestAi("")
+                        },
                     )
                 }
 
@@ -231,14 +304,19 @@ class MainActivity : ComponentActivity() {
                 }
 
                 speechRecognizer.setRecognitionListener(object : RecognitionListener {
-                    override fun onReadyForSpeech(params: Bundle?) = Unit
-                    override fun onBeginningOfSpeech() = Unit
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        runOnUiThread { diagStt = "ready" }
+                    }
+                    override fun onBeginningOfSpeech() {
+                        runOnUiThread { diagStt = "hearing speech" }
+                    }
                     override fun onRmsChanged(rmsdB: Float) = Unit
                     override fun onBufferReceived(buffer: ByteArray?) = Unit
                     override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
                     override fun onEndOfSpeech() {
                         runOnUiThread {
+                            diagStt = "end speech"
                             if (!turnDispatched && latestPartial.isNotBlank()) {
                                 val candidate = latestPartial
                                 val runnable = Runnable { dispatchRecognized(candidate) }
@@ -270,6 +348,7 @@ class MainActivity : ComponentActivity() {
                                 else -> {
                                     suppressClientError = false
                                     clearTurnTimers()
+                                    diagStt = "ERROR $error"
                                     lastError = "STT error $error"
                                     resetToIdle()
                                 }
@@ -285,7 +364,10 @@ class MainActivity : ComponentActivity() {
                             .orEmpty()
                         if (text.isNotEmpty()) {
                             latestPartial = text
-                            runOnUiThread { armSilenceDetector() }
+                            runOnUiThread {
+                                diagStt = "partial: ${text.take(35)}"
+                                armSilenceDetector()
+                            }
                         }
                     }
 
@@ -316,6 +398,7 @@ class MainActivity : ComponentActivity() {
                     .onFailure {
                         recognitionActive = false
                         clearTurnTimers()
+                        diagStt = "ERROR start"
                         lastError = "STT start failed"
                         resetToIdle()
                     }
@@ -325,6 +408,7 @@ class MainActivity : ComponentActivity() {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                     startListening()
                 } else {
+                    diagStt = "requesting permission"
                     onMicPermissionGranted = { startListening() }
                     requestMic.launch(Manifest.permission.RECORD_AUDIO)
                 }
@@ -353,6 +437,24 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                     )
+
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(12.dp)
+                            .background(Color(0xCC000000))
+                            .padding(10.dp)
+                    ) {
+                        Text("BUILD #66 DIAG", color = Color.Yellow)
+                        Text("STT: $diagStt", color = Color.White)
+                        Text("MEM: $diagMemory", color = Color.White)
+                        Text("AI: $diagAi", color = Color.White)
+                        Text("TTS: $diagTts", color = Color.White)
+                        Text("HEYGEN: $diagHeygen", color = Color.White)
+                        Text("LIVEKIT: $diagLivekit", color = Color.White)
+                        Text("WS: $diagWs | PCM chunks: $diagPcmChunks", color = Color.White)
+                        lastError?.let { Text("ERR: ${it.take(180)}", color = Color.Red) }
+                    }
 
                     FloatingActionButton(
                         onClick = {
