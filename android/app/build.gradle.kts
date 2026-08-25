@@ -45,5 +45,8 @@ dependencies {
     // LiveKit is therefore the realtime video transport for the speaking avatar.
     implementation("io.livekit:livekit-android:2.28.0")
 
+    // LITE mode exposes a WebSocket for agent.speak PCM audio commands.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
