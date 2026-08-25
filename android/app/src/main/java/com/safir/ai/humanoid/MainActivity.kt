@@ -74,6 +74,10 @@ class MainActivity : ComponentActivity() {
             val ttsPlayer = remember {
                 TtsHttpPcmPlayer(
                     onEvent = { event -> runOnUiThread { applyVoiceEvent(event) } },
+                    onPcmStart = { liveAvatarClient.beginSpeech() },
+                    onPcmChunk = { pcm -> liveAvatarClient.pushSpeechPcm(pcm) },
+                    onPcmEnd = { liveAvatarClient.endSpeech() },
+                    onPcmInterrupt = { liveAvatarClient.interruptSpeech() },
                     onError = { message ->
                         runOnUiThread {
                             lastError = message
@@ -89,8 +93,6 @@ class MainActivity : ComponentActivity() {
             }
 
             DisposableEffect(liveAvatarClient) {
-                // Safir 4K Robot photo-avatar look. If LiveAvatar does not accept this
-                // identity, the local Mars video stays visible and the voice path keeps working.
                 liveAvatarClient.connect(
                     avatarId = "d1627d8c38e24bdcbf849b09ce914282",
                     onVideoReady = {
@@ -334,8 +336,6 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(Color.Black)
                 ) {
-                    // Always-on local fallback. It remains underneath the realtime renderer,
-                    // so a provider disconnect never leaves the user with a black screen.
                     MotionPlayer(
                         mediaUri = humanoidVideoUri,
                         loop = true,
