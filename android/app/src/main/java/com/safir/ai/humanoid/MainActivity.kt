@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             var state by remember { mutableStateOf(AvatarState.IDLE) }
+            val motion = MotionEngine.primaryFor(state)
 
             MaterialTheme {
                 Box(
@@ -36,27 +38,33 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(Color(0xFF102448))
                 ) {
-                    // This is intentionally kept mounted for the lifetime of the screen.
-                    // Once the durable HeyGen MP4 URLs/files are resolved, state changes only
-                    // replace the media item; the avatar surface itself never disappears.
+                    // Persistent avatar surface: state changes select another motion but do not
+                    // replace the player composable. mediaUri remains null until the durable
+                    // HeyGen motion file resolver is connected.
                     MotionPlayer(
                         mediaUri = null,
-                        loop = state == AvatarState.IDLE || state == AvatarState.LISTENING,
+                        loop = motion.loopable,
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    Text(
-                        text = state.name,
-                        color = Color(0xFFB9D8FF),
+                    Column(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
-                            .padding(top = 24.dp)
-                    )
+                            .padding(top = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(state.name, color = Color(0xFFB9D8FF))
+                        Text(motion.id, color = Color(0xFF7FDBFF))
+                    }
 
                     FloatingActionButton(
                         onClick = {
                             requestMic.launch(Manifest.permission.RECORD_AUDIO)
-                            state = if (state == AvatarState.LISTENING) AvatarState.IDLE else AvatarState.LISTENING
+                            state = if (state == AvatarState.LISTENING) {
+                                AvatarState.IDLE
+                            } else {
+                                AvatarState.LISTENING
+                            }
                         },
                         shape = CircleShape,
                         modifier = Modifier
