@@ -140,23 +140,34 @@ class MainActivity : ComponentActivity() {
 
                     memoryClient.storeTurn("user", text)
 
-                    aiClient.request(
-                        text = text,
-                        onSuccess = { result ->
-                            memoryClient.storeTurn("assistant", result.reply)
-                            runOnUiThread {
-                                pendingBehavior = result.behavior
-                                suppressClientError = false
-                                ttsPlayer.speak(result.reply)
-                            }
-                        },
-                        onError = { message ->
-                            runOnUiThread {
-                                suppressClientError = false
-                                lastError = message
-                                resetToIdle()
-                            }
-                        },
+                    fun requestAi(memoryContext: String) {
+                        aiClient.request(
+                            text = text,
+                            memoryContext = memoryContext,
+                            onSuccess = { result ->
+                                memoryClient.storeTurn("assistant", result.reply)
+                                result.memories.forEach { (kind, content) ->
+                                    memoryClient.storeMemory(kind, content)
+                                }
+                                runOnUiThread {
+                                    pendingBehavior = result.behavior
+                                    suppressClientError = false
+                                    ttsPlayer.speak(result.reply)
+                                }
+                            },
+                            onError = { message ->
+                                runOnUiThread {
+                                    suppressClientError = false
+                                    lastError = message
+                                    resetToIdle()
+                                }
+                            },
+                        )
+                    }
+
+                    memoryClient.fetchContext(
+                        onSuccess = { context -> requestAi(context) },
+                        onError = { requestAi("") },
                     )
                 }
 
