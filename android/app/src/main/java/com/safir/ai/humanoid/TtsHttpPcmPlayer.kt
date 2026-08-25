@@ -32,8 +32,8 @@ class TtsHttpPcmPlayer(
                 val endpoint = URL("${BuildConfig.SUPABASE_URL}/functions/v1/humanoid-tts")
                 conn = (endpoint.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    connectTimeout = 10_000
-                    readTimeout = 60_000
+                    connectTimeout = 8_000
+                    readTimeout = 45_000
                     doOutput = true
                     setRequestProperty("Authorization", "Bearer ${BuildConfig.SUPABASE_ANON_KEY}")
                     setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
@@ -44,7 +44,7 @@ class TtsHttpPcmPlayer(
 
                 val body = JSONObject()
                     .put("text", text)
-                    .put("model_id", "eleven_turbo_v2_5")
+                    .put("model_id", "eleven_flash_v2_5")
                     .put("output_format", "mp3_44100_128")
                     .toString()
 
