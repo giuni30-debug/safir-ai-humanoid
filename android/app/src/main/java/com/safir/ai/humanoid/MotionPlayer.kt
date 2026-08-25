@@ -21,8 +21,8 @@ import androidx.media3.ui.PlayerView
  * The player instance survives state changes so the avatar surface is never
  * replaced by another screen. Motion selection only swaps MediaItems.
  *
- * Playback callbacks expose real Media3 events to the voice/state layer. They
- * must be preferred over guessed delays when synchronizing state transitions.
+ * IMPORTANT: HeyGen source audio is always muted here. Safir's own ElevenLabs
+ * voice is the single audio source, preventing narrator/agent overlap.
  */
 @Composable
 fun MotionPlayer(
@@ -41,6 +41,7 @@ fun MotionPlayer(
     val player = remember {
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
+            volume = 0f
         }
     }
 
@@ -70,6 +71,7 @@ fun MotionPlayer(
 
     LaunchedEffect(mediaUri, loop) {
         player.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        player.volume = 0f
 
         if (!mediaUri.isNullOrBlank()) {
             player.setMediaItem(MediaItem.fromUri(Uri.parse(mediaUri)))
@@ -90,6 +92,9 @@ fun MotionPlayer(
                 keepScreenOn = true
             }
         },
-        update = { view -> view.player = player }
+        update = { view ->
+            player.volume = 0f
+            view.player = player
+        }
     )
 }
