@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
 
             val ttsPlayer = remember {
                 TtsHttpPcmPlayer(
+                    context = applicationContext,
                     onEvent = { event ->
                         runOnUiThread { applyVoiceEvent(event) }
                     },
