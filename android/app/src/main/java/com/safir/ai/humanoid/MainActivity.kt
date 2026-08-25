@@ -47,8 +47,6 @@ class MainActivity : ComponentActivity() {
             var state by remember { mutableStateOf(AvatarState.IDLE) }
             var motion by remember { mutableStateOf(MotionEngine.primaryFor(AvatarState.IDLE)) }
             var lastError by remember { mutableStateOf<String?>(null) }
-            var transcript by remember { mutableStateOf("") }
-            var responseText by remember { mutableStateOf("") }
             var recognitionActive by remember { mutableStateOf(false) }
             var suppressClientError by remember { mutableStateOf(false) }
             var pendingBehavior by remember { mutableStateOf(SpeechBehavior()) }
@@ -115,8 +113,6 @@ class MainActivity : ComponentActivity() {
                 if (recognitionActive) return
 
                 lastError = null
-                transcript = ""
-                responseText = ""
                 suppressClientError = false
                 recognitionActive = true
                 state = AvatarState.LISTENING
@@ -138,7 +134,6 @@ class MainActivity : ComponentActivity() {
                     fallbackRunnable?.let { mainHandler.removeCallbacks(it) }
                     recognitionActive = false
                     suppressClientError = true
-                    transcript = text
                     state = AvatarState.THINKING
                     motion = MotionEngine.primaryFor(AvatarState.THINKING)
 
@@ -147,7 +142,6 @@ class MainActivity : ComponentActivity() {
                         onSuccess = { result ->
                             runOnUiThread {
                                 pendingBehavior = result.behavior
-                                responseText = result.reply
                                 suppressClientError = false
                                 ttsPlayer.speak(result.reply)
                             }
@@ -214,10 +208,7 @@ class MainActivity : ComponentActivity() {
                             ?.firstOrNull()
                             ?.trim()
                             .orEmpty()
-                        if (text.isNotEmpty()) {
-                            latestPartial = text
-                            runOnUiThread { transcript = text }
-                        }
+                        if (text.isNotEmpty()) latestPartial = text
                     }
 
                     override fun onResults(results: Bundle?) {
@@ -282,8 +273,6 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text(state.name, color = Color(0xFFB9D8FF))
                         Text(motion.id, color = Color(0xFF7FDBFF))
-                        if (transcript.isNotBlank()) Text(transcript, color = Color.White)
-                        if (responseText.isNotBlank()) Text(responseText, color = Color(0xFFDDEEFF))
                         lastError?.let { Text(it, color = Color(0xFFFFB4AB)) }
                     }
 
