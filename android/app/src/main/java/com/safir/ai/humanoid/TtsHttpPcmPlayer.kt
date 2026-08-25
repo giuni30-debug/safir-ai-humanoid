@@ -1,10 +1,9 @@
 package com.safir.ai.humanoid
 
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
+import android.media.MediaDataSource
+import android.media.MediaPlayer
 import org.json.JSONObject
-import java.io.BufferedInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicLong
@@ -18,7 +17,7 @@ class TtsHttpPcmPlayer(
 
     @Volatile private var activeTurnId = 0L
     @Volatile private var activeConnection: HttpURLConnection? = null
-    @Volatile private var activeTrack: AudioTrack? = null
+    @Volatile private var activePlayer: MediaPlayer? = null
 
     fun speak(text: String) {
         cancel(notify = false)
@@ -27,10 +26,8 @@ class TtsHttpPcmPlayer(
         activeTurnId = turnId
         onEvent(VoiceSyncEvent.TURN_STARTED)
 
-        thread(name = "safir-tts-pcm-$turnId") {
+        thread(name = "safir-tts-mp3-$turnId") {
             var conn: HttpURLConnection? = null
-            var track: AudioTrack? = null
-
             try {
                 val endpoint = URL("${BuildConfig.SUPABASE_URL}/functions/v1/humanoid-tts")
                 conn = (endpoint.openConnection() as HttpURLConnection).apply {
@@ -41,14 +38,14 @@ class TtsHttpPcmPlayer(
                     setRequestProperty("Authorization", "Bearer ${BuildConfig.SUPABASE_ANON_KEY}")
                     setRequestProperty("apikey", BuildConfig.SUPABASE_ANON_KEY)
                     setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Accept", "application/octet-stream")
+                    setRequestProperty("Accept", "audio/mpeg")
                 }
                 activeConnection = conn
 
                 val body = JSONObject()
                     .put("text", text)
-                    .put("model_id", "eleven_flash_v2_5")
-                    .put("output_format", "pcm_24000")
+                    .put("model_id", "eleven_turbo_v2_5")
+                    .put("output_format", "mp3_44100_128")
                     .toString()
 
                 conn.outputStream.use { out -> out.write(body.toByteArray(Charsets.UTF_8)) }
@@ -60,89 +57,62 @@ class TtsHttpPcmPlayer(
                 }
                 if (!isCurrent(turnId)) return@thread
 
-                val declaredFormat = conn.getHeaderField("x-safir-output-format")
-                if (!declaredFormat.isNullOrBlank() && declaredFormat != "pcm_24000") {
-                    throw IllegalStateException("TTS format mismatch: $declaredFormat")
-                }
+                val bytes = conn.inputStream.use { it.readBytes() }
+                if (!isCurrent(turnId)) return@thread
+                if (bytes.isEmpty()) throw IllegalStateException("TTS returned empty audio")
 
-                val minBuffer = AudioTrack.getMinBufferSize(
-                    SAMPLE_RATE,
-                    AudioFormat.CHANNEL_OUT_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                ).coerceAtLeast(SAMPLE_RATE)
-
-                track = AudioTrack.Builder()
-                    .setAudioAttributes(
+                val dataSource = ByteArrayMediaDataSource(bytes)
+                val player = MediaPlayer().apply {
+                    setAudioAttributes(
                         AudioAttributes.Builder()
                             .setUsage(AudioAttributes.USAGE_ASSISTANT)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                             .build()
                     )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setSampleRate(SAMPLE_RATE)
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                            .build()
-                    )
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .setBufferSizeInBytes(minBuffer)
-                    .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                    .build()
-
-                activeTrack = track
-                track.play()
-
-                var totalBytesWritten = 0L
-                var firstFrameSent = false
-                val buffer = ByteArray(4096)
-
-                BufferedInputStream(conn.inputStream).use { input ->
-                    while (isCurrent(turnId)) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        if (read == 0) continue
-
-                        var offset = 0
-                        while (offset < read && isCurrent(turnId)) {
-                            val written = track.write(buffer, offset, read - offset, AudioTrack.WRITE_BLOCKING)
-                            if (written < 0) throw IllegalStateException("AudioTrack write failed: $written")
-                            if (written == 0) continue
-
-                            offset += written
-                            totalBytesWritten += written
-
-                            if (!firstFrameSent) {
-                                firstFrameSent = true
-                                onEvent(VoiceSyncEvent.FIRST_AUDIO_FRAME)
-                            }
+                    setDataSource(dataSource)
+                    setOnPreparedListener { mp ->
+                        if (!isCurrent(turnId)) {
+                            runCatching { mp.release() }
+                            return@setOnPreparedListener
                         }
+                        activePlayer = mp
+                        mp.start()
+                        onEvent(VoiceSyncEvent.FIRST_AUDIO_FRAME)
+                    }
+                    setOnCompletionListener { mp ->
+                        if (isCurrent(turnId)) onEvent(VoiceSyncEvent.AUDIO_COMPLETED)
+                        runCatching { mp.release() }
+                        if (activeTurnId == turnId) {
+                            activePlayer = null
+                            activeTurnId = 0L
+                        }
+                        runCatching { dataSource.close() }
+                    }
+                    setOnErrorListener { mp, what, extra ->
+                        if (isCurrent(turnId)) onError("MediaPlayer error $what/$extra")
+                        runCatching { mp.release() }
+                        if (activeTurnId == turnId) {
+                            activePlayer = null
+                            activeTurnId = 0L
+                        }
+                        runCatching { dataSource.close() }
+                        true
                     }
                 }
 
-                if (!isCurrent(turnId)) return@thread
-                if (totalBytesWritten == 0L) {
-                    throw IllegalStateException("TTS returned empty audio")
+                if (!isCurrent(turnId)) {
+                    runCatching { player.release() }
+                    runCatching { dataSource.close() }
+                    return@thread
                 }
 
-                val framesWritten = totalBytesWritten / BYTES_PER_FRAME
-                while (isCurrent(turnId) && playbackFrames(track) < framesWritten) {
-                    Thread.sleep(10)
-                }
-
-                if (isCurrent(turnId)) onEvent(VoiceSyncEvent.AUDIO_COMPLETED)
+                activePlayer = player
+                player.prepareAsync()
             } catch (t: Throwable) {
                 if (isCurrent(turnId)) onError(t.message ?: t.javaClass.simpleName)
             } finally {
-                runCatching { track?.pause() }
-                runCatching { track?.flush() }
-                runCatching { track?.release() }
                 runCatching { conn?.disconnect() }
-
-                if (activeTurnId == turnId) {
-                    activeTrack = null
-                    activeConnection = null
-                }
+                if (activeTurnId == turnId) activeConnection = null
             }
         }
     }
@@ -157,25 +127,33 @@ class TtsHttpPcmPlayer(
         turnCounter.incrementAndGet()
 
         val conn = activeConnection
-        val track = activeTrack
+        val player = activePlayer
         activeConnection = null
-        activeTrack = null
+        activePlayer = null
 
         runCatching { conn?.disconnect() }
-        runCatching { track?.pause() }
-        runCatching { track?.flush() }
+        runCatching { player?.stop() }
+        runCatching { player?.reset() }
+        runCatching { player?.release() }
 
         if (notify && hadActiveTurn) onEvent(VoiceSyncEvent.INTERRUPTED)
     }
 
     private fun isCurrent(turnId: Long): Boolean = activeTurnId == turnId
 
-    @Suppress("DEPRECATION")
-    private fun playbackFrames(track: AudioTrack): Long =
-        track.playbackHeadPosition.toLong() and 0xffffffffL
+    private class ByteArrayMediaDataSource(
+        private val data: ByteArray,
+    ) : MediaDataSource() {
+        override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+            if (position >= data.size) return -1
+            val available = data.size - position.toInt()
+            val count = minOf(size, available)
+            System.arraycopy(data, position.toInt(), buffer, offset, count)
+            return count
+        }
 
-    private companion object {
-        const val SAMPLE_RATE = 24_000
-        const val BYTES_PER_FRAME = 2L
+        override fun getSize(): Long = data.size.toLong()
+
+        override fun close() = Unit
     }
 }
