@@ -2,7 +2,6 @@ package com.safir.ai.humanoid
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioTrack
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -74,7 +73,7 @@ class TtsHttpPcmPlayer(
                 track = AudioTrack.Builder()
                     .setAudioAttributes(
                         AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                             .build()
                     )
@@ -90,6 +89,7 @@ class TtsHttpPcmPlayer(
                     .build()
 
                 activeTrack = track
+                track.setVolume(1.0f)
                 track.play()
 
                 conn.inputStream.use { input ->
