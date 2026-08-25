@@ -48,14 +48,17 @@ class MainActivity : ComponentActivity() {
             var motion by remember { mutableStateOf(MotionEngine.primaryFor(AvatarState.IDLE)) }
             var lastError by remember { mutableStateOf<String?>(null) }
             var transcript by remember { mutableStateOf("") }
+            var responseText by remember { mutableStateOf("") }
             var recognitionActive by remember { mutableStateOf(false) }
             var suppressClientError by remember { mutableStateOf(false) }
+            var pendingBehavior by remember { mutableStateOf(SpeechBehavior()) }
 
             val mainHandler = remember { Handler(Looper.getMainLooper()) }
+            val aiClient = remember { AiReplyClient() }
 
             fun applyVoiceEvent(
                 event: VoiceSyncEvent,
-                behavior: SpeechBehavior = SpeechBehavior(),
+                behavior: SpeechBehavior = pendingBehavior,
             ) {
                 val decision = VoiceSyncEngine.decide(event, behavior)
                 state = decision.state
@@ -113,6 +116,7 @@ class MainActivity : ComponentActivity() {
 
                 lastError = null
                 transcript = ""
+                responseText = ""
                 suppressClientError = false
                 recognitionActive = true
                 state = AvatarState.LISTENING
@@ -138,10 +142,24 @@ class MainActivity : ComponentActivity() {
                     state = AvatarState.THINKING
                     motion = MotionEngine.primaryFor(AvatarState.THINKING)
 
-                    mainHandler.postDelayed({
-                        suppressClientError = false
-                        ttsPlayer.speak(text)
-                    }, 180L)
+                    aiClient.request(
+                        text = text,
+                        onSuccess = { result ->
+                            runOnUiThread {
+                                pendingBehavior = result.behavior
+                                responseText = result.reply
+                                suppressClientError = false
+                                ttsPlayer.speak(result.reply)
+                            }
+                        },
+                        onError = { message ->
+                            runOnUiThread {
+                                suppressClientError = false
+                                lastError = message
+                                resetToIdle()
+                            }
+                        },
+                    )
                 }
 
                 speechRecognizer.setRecognitionListener(object : RecognitionListener {
@@ -157,7 +175,7 @@ class MainActivity : ComponentActivity() {
                                 val candidate = latestPartial
                                 val runnable = Runnable { dispatchRecognized(candidate) }
                                 fallbackRunnable = runnable
-                                mainHandler.postDelayed(runnable, 900L)
+                                mainHandler.postDelayed(runnable, 450L)
                             }
                         }
                     }
@@ -265,6 +283,7 @@ class MainActivity : ComponentActivity() {
                         Text(state.name, color = Color(0xFFB9D8FF))
                         Text(motion.id, color = Color(0xFF7FDBFF))
                         if (transcript.isNotBlank()) Text(transcript, color = Color.White)
+                        if (responseText.isNotBlank()) Text(responseText, color = Color(0xFFDDEEFF))
                         lastError?.let { Text(it, color = Color(0xFFFFB4AB)) }
                     }
 
@@ -274,7 +293,7 @@ class MainActivity : ComponentActivity() {
                             when (state) {
                                 AvatarState.SPEAKING, AvatarState.THINKING -> {
                                     ttsPlayer.interrupt()
-                                    mainHandler.postDelayed({ ensureMicThenListen() }, 200L)
+                                    mainHandler.postDelayed({ ensureMicThenListen() }, 120L)
                                 }
                                 AvatarState.LISTENING -> stopListeningToIdle()
                                 else -> ensureMicThenListen()
