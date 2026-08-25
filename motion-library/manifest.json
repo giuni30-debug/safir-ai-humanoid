@@ -1,0 +1,39 @@
+{
+  "source": {
+    "provider": "HeyGen Video Agent",
+    "sessionId": "feedb180e32b43f5b90f95bfbe7d8422",
+    "note": "Resource IDs captured from the completed 30-motion generation batch. Resolve each resource to a durable asset before production."
+  },
+  "motions": [
+    {"id":"01_IDLE_BREATH_SOFT","state":"IDLE","resourceId":"video_w00l1o","loopable":true,"transitionGroup":"neutral"},
+    {"id":"02_IDLE_WEIGHT_SHIFT","state":"IDLE","resourceId":"video_nldojw","loopable":true,"transitionGroup":"neutral"},
+    {"id":"03_IDLE_HEAD_TILT","state":"IDLE","resourceId":"video_5xn92s","loopable":true,"transitionGroup":"neutral"},
+    {"id":"04_IDLE_EYE_SCAN","state":"IDLE","resourceId":"video_g8h12y","loopable":true,"transitionGroup":"neutral"},
+    {"id":"05_IDLE_SHOULDER_RESET","state":"IDLE","resourceId":"video_r6xzl2","loopable":true,"transitionGroup":"neutral"},
+    {"id":"06_IDLE_MICRO_LEAN","state":"IDLE","resourceId":"video_sfuk43","loopable":true,"transitionGroup":"neutral"},
+    {"id":"07_LISTEN_FOCUS","state":"LISTENING","resourceId":"video_guzefl","loopable":true,"transitionGroup":"neutral"},
+    {"id":"08_LISTEN_NOD_SINGLE","state":"LISTENING","resourceId":"video_krdo5e","loopable":false,"transitionGroup":"neutral"},
+    {"id":"09_LISTEN_NOD_DOUBLE","state":"LISTENING","resourceId":"video_4qicq9","loopable":false,"transitionGroup":"neutral"},
+    {"id":"10_LISTEN_LEAN_FORWARD","state":"LISTENING","resourceId":"video_jta1sl","loopable":false,"transitionGroup":"neutral"},
+    {"id":"11_LISTEN_HAND_READY","state":"LISTENING","resourceId":"video_ppoab5","loopable":false,"transitionGroup":"neutral"},
+    {"id":"12_THINK_LOOK_SIDE","state":"THINKING","resourceId":"video_nxp1vf","loopable":false,"transitionGroup":"neutral"},
+    {"id":"13_THINK_CHIN_TOUCH","state":"THINKING","resourceId":"video_zjpuge","loopable":false,"transitionGroup":"neutral"},
+    {"id":"14_THINK_EYES_UP","state":"THINKING","resourceId":"video_kwf7qg","loopable":false,"transitionGroup":"neutral"},
+    {"id":"15_THINK_STILL_PROCESSING","state":"THINKING","resourceId":"video_kk76ms","loopable":true,"transitionGroup":"neutral"},
+    {"id":"16_THINK_RETURN","state":"THINKING","resourceId":"video_zrchwk","loopable":false,"transitionGroup":"neutral"},
+    {"id":"17_SPEAK_CALM_OPEN_HAND","state":"SPEAKING","resourceId":"video_7o0omr","loopable":false,"transitionGroup":"speak"},
+    {"id":"18_SPEAK_EXPLAIN_ONE_HAND","state":"SPEAKING","resourceId":"video_6zqvcc","loopable":false,"transitionGroup":"speak"},
+    {"id":"19_SPEAK_EXPLAIN_TWO_HANDS","state":"SPEAKING","resourceId":"video_fi5qlu","loopable":false,"transitionGroup":"speak"},
+    {"id":"20_SPEAK_CONFIDENT","state":"SPEAKING","resourceId":"video_cxt50u","loopable":false,"transitionGroup":"speak"},
+    {"id":"21_SPEAK_AFFIRM","state":"SPEAKING","resourceId":"video_ccy5k5","loopable":false,"transitionGroup":"speak"},
+    {"id":"22_SPEAK_EMPHASIS","state":"SPEAKING","resourceId":"video_3priih","loopable":false,"transitionGroup":"speak"},
+    {"id":"23_SPEAK_WARM","state":"SPEAKING","resourceId":"video_pova7w","loopable":false,"transitionGroup":"speak"},
+    {"id":"24_SPEAK_SERIOUS","state":"SPEAKING","resourceId":"video_rijqxi","loopable":false,"transitionGroup":"speak"},
+    {"id":"25_EMOTION_SMILE","state":"EMOTION","resourceId":"video_noayj4","loopable":false,"transitionGroup":"neutral"},
+    {"id":"26_EMOTION_LAUGH_SOFT","state":"EMOTION","resourceId":"video_bgb9le","loopable":false,"transitionGroup":"neutral"},
+    {"id":"27_EMOTION_SURPRISED","state":"EMOTION","resourceId":"video_q6rxfu","loopable":false,"transitionGroup":"neutral"},
+    {"id":"28_EMOTION_CURIOUS","state":"EMOTION","resourceId":"video_t7qrvm","loopable":false,"transitionGroup":"neutral"},
+    {"id":"29_EMOTION_EMPATHETIC","state":"EMOTION","resourceId":"video_vky8es","loopable":false,"transitionGroup":"neutral"},
+    {"id":"30_TRANSITION_SPEAK_TO_IDLE","state":"TRANSITION","resourceId":"video_3mmrrg","loopable":false,"transitionGroup":"bridge"}
+  ]
+}
