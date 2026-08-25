@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             var state by remember { mutableStateOf(AvatarState.IDLE) }
             var motion by remember { mutableStateOf(MotionEngine.primaryFor(AvatarState.IDLE)) }
+            var lastError by remember { mutableStateOf<String?>(null) }
 
             fun applyVoiceEvent(
                 event: VoiceSyncEvent,
@@ -41,22 +43,34 @@ class MainActivity : ComponentActivity() {
                 motion = decision.motion
             }
 
+            val ttsPlayer = remember {
+                TtsHttpPcmPlayer(
+                    onEvent = { event -> runOnUiThread { applyVoiceEvent(event) } },
+                    onError = { message ->
+                        runOnUiThread {
+                            lastError = message
+                            state = AvatarState.IDLE
+                            motion = MotionEngine.primaryFor(AvatarState.IDLE)
+                        }
+                    },
+                )
+            }
+
+            DisposableEffect(ttsPlayer) {
+                onDispose { ttsPlayer.release() }
+            }
+
             MaterialTheme {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color(0xFF102448))
                 ) {
-                    // Persistent avatar surface. The motion player owns body-video playback only.
-                    // FIRST_AUDIO_FRAME and AUDIO_COMPLETED must come from the TTS/audio player,
-                    // not from body-motion video callbacks.
                     MotionPlayer(
                         mediaUri = null,
                         loop = motion.loopable,
                         modifier = Modifier.fillMaxSize(),
                         onPlaybackEnded = {
-                            // Body-motion completion is only authoritative for the explicit
-                            // speak-to-idle bridge. Speech completion itself is audio-authoritative.
                             if (motion.id == MotionEngine.speakToIdle.id) {
                                 state = AvatarState.IDLE
                                 motion = MotionEngine.primaryFor(AvatarState.IDLE)
@@ -72,16 +86,16 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text(state.name, color = Color(0xFFB9D8FF))
                         Text(motion.id, color = Color(0xFF7FDBFF))
+                        lastError?.let { Text(it, color = Color(0xFFFFB4AB)) }
                     }
 
                     FloatingActionButton(
                         onClick = {
                             requestMic.launch(Manifest.permission.RECORD_AUDIO)
+                            lastError = null
 
                             if (state == AvatarState.SPEAKING || state == AvatarState.THINKING) {
-                                // Barge-in path: the future audio/TTS layer must cancel audio first,
-                                // then emit INTERRUPTED here.
-                                applyVoiceEvent(VoiceSyncEvent.INTERRUPTED)
+                                ttsPlayer.interrupt()
                             } else if (state == AvatarState.LISTENING) {
                                 state = AvatarState.IDLE
                                 motion = MotionEngine.primaryFor(AvatarState.IDLE)
