@@ -29,11 +29,11 @@
     {"id":"22_SPEAK_EMPHASIS","state":"SPEAKING","resourceId":"video_3priih","assetId":"03a65f760bea4314809b9aa4dd133fe6","playbackMediaUri":null,"ingestStatus":"asset_resolved_media_pending","loopable":false,"transitionGroup":"speak"},
     {"id":"23_SPEAK_WARM","state":"SPEAKING","resourceId":"video_pova7w","assetId":"f1c57889f800440ebe81bf4037decf91","playbackMediaUri":null,"ingestStatus":"asset_resolved_media_pending","loopable":false,"transitionGroup":"speak"},
     {"id":"24_SPEAK_SERIOUS","state":"SPEAKING","resourceId":"video_rijqxi","assetId":"e317d01a7979492fa0371bfcd0ae27a0","playbackMediaUri":null,"ingestStatus":"asset_resolved_media_pending","loopable":false,"transitionGroup":"speak"},
-    {"id":"25_EMOTION_SMILE","state":"EMOTION","resourceId":"video_noayj4","assetId":null,"playbackMediaUri":null,"ingestStatus":"resource_only","loopable":false,"transitionGroup":"neutral"},
-    {"id":"26_EMOTION_LAUGH_SOFT","state":"EMOTION","resourceId":"video_bgb9le","assetId":null,"playbackMediaUri":null,"ingestStatus":"resource_only","loopable":false,"transitionGroup":"neutral"},
-    {"id":"27_EMOTION_SURPRISED","state":"EMOTION","resourceId":"video_q6rxfu","assetId":null,"playbackMediaUri":null,"ingestStatus":"resource_only","loopable":false,"transitionGroup":"neutral"},
-    {"id":"28_EMOTION_CURIOUS","state":"EMOTION","resourceId":"video_t7qrvm","assetId":null,"playbackMediaUri":null,"ingestStatus":"resource_only","loopable":false,"transitionGroup":"neutral"},
-    {"id":"29_EMOTION_EMPATHETIC","state":"EMOTION","resourceId":"video_vky8es","assetId":null,"playbackMediaUri":null,"ingestStatus":"resource_only","loopable":false,"transitionGroup":"neutral"},
-    {"id":"30_TRANSITION_SPEAK_TO_IDLE","state":"TRANSITION","resourceId":"video_3mmrrg","assetId":null,"playbackMediaUri":null,"ingestStatus":"resource_only","loopable":false,"transitionGroup":"bridge"}
+    {"id":"25_EMOTION_SMILE","state":"EMOTION","resourceId":"video_noayj4","assetId":"a4327f20778148db856b5ace04fca1dd","playbackMediaUri":null,"ingestStatus":"asset_resolved_media_pending","loopable":false,"transitionGroup":"neutral"},
+    {"id":"26_EMOTION_LAUGH_SOFT","state":"EMOTION","resourceId":"video_bgb9le","assetId":"73439a61e20743c4b75a6bacc005810a","playbackMediaUri":null,"ingestStatus":"asset_resolved_media_pending","loopable":false,"transitionGroup":"neutral"},
+    {"id":"27_EMOTION_SURPRISED","state":"EMOTION","resourceId":"video_q6rxfu","assetId":"f803227dea4342f7a2c9076467a55b15","playbackMediaUri":null,"ingestStatus":"asset_resolved_media_pending","loopable":false,"transitionGroup":"neutral"},
+    {"id":"28_EMOTION_CURIOUS","state":"EMOTION","resourceId":"video_t7qrvm","assetId":"36f4e428a09644b1848cdfab2c468821","playbackMediaUri":null,"ingestStatus":"asset_resolved_media_pending","loopable":false,"transitionGroup":"neutral"},
+    {"id":"29_EMOTION_EMPATHETIC","state":"EMOTION","resourceId":"video_vky8es","assetId":"b818a264d7044abdaec8c8c6289d39e2","playbackMediaUri":null,"ingestStatus":"asset_resolved_media_pending","loopable":false,"transitionGroup":"neutral"},
+    {"id":"30_TRANSITION_SPEAK_TO_IDLE","state":"TRANSITION","resourceId":"video_3mmrrg","assetId":"7b1e3873271f4c60b3687a1ed418b9da","playbackMediaUri":null,"ingestStatus":"asset_resolved_media_pending","loopable":false,"transitionGroup":"bridge"}
   ]
 }
