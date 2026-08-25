@@ -66,13 +66,9 @@ class LiveAvatarClient(
                                 when (event) {
                                     is RoomEvent.TrackSubscribed -> {
                                         val track = event.track
-                                        if (track is VideoTrack && event.participant.identity == "heygen") {
-                                            attachTrack(track)
-                                        }
+                                        if (track is VideoTrack) attachTrack(track)
                                     }
-                                    is RoomEvent.Disconnected -> {
-                                        isConnected = false
-                                    }
+                                    is RoomEvent.Disconnected -> isConnected = false
                                     else -> Unit
                                 }
                             }
@@ -81,9 +77,11 @@ class LiveAvatarClient(
                         nextRoom.connect(session.livekitUrl, session.livekitClientToken)
 
                         val existing = nextRoom.remoteParticipants.values
-                            .firstOrNull { it.identity == "heygen" }
-                            ?.getTrackPublication(Track.Source.CAMERA)
-                            ?.track as? VideoTrack
+                            .asSequence()
+                            .mapNotNull { participant ->
+                                participant.getTrackPublication(Track.Source.CAMERA)?.track as? VideoTrack
+                            }
+                            .firstOrNull()
                         if (existing != null) attachTrack(existing)
 
                         isConnected = true
