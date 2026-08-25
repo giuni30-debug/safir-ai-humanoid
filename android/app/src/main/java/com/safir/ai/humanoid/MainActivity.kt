@@ -1,7 +1,12 @@
 package com.safir.ai.humanoid
 
 import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,9 +28,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
-    private val requestMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private var onMicPermissionGranted: (() -> Unit)? = null
+
+    private val requestMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) onMicPermissionGranted?.invoke()
+        onMicPermissionGranted = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,6 +45,7 @@ class MainActivity : ComponentActivity() {
             var state by remember { mutableStateOf(AvatarState.IDLE) }
             var motion by remember { mutableStateOf(MotionEngine.primaryFor(AvatarState.IDLE)) }
             var lastError by remember { mutableStateOf<String?>(null) }
+            var transcript by remember { mutableStateOf("") }
 
             fun applyVoiceEvent(
                 event: VoiceSyncEvent,
@@ -56,8 +69,97 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            DisposableEffect(ttsPlayer) {
-                onDispose { ttsPlayer.release() }
+            val speechRecognizer = remember {
+                if (SpeechRecognizer.isRecognitionAvailable(this)) SpeechRecognizer.createSpeechRecognizer(this) else null
+            }
+
+            DisposableEffect(speechRecognizer, ttsPlayer) {
+                onDispose {
+                    runCatching { speechRecognizer?.cancel() }
+                    runCatching { speechRecognizer?.destroy() }
+                    ttsPlayer.release()
+                }
+            }
+
+            fun stopListeningToIdle() {
+                runCatching { speechRecognizer?.cancel() }
+                state = AvatarState.IDLE
+                motion = MotionEngine.primaryFor(AvatarState.IDLE)
+            }
+
+            fun startListening() {
+                if (speechRecognizer == null) {
+                    lastError = "Speech recognition unavailable on this device"
+                    return
+                }
+
+                lastError = null
+                transcript = ""
+                state = AvatarState.LISTENING
+                motion = MotionEngine.primaryFor(AvatarState.LISTENING)
+
+                speechRecognizer.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) = Unit
+                    override fun onBeginningOfSpeech() = Unit
+                    override fun onRmsChanged(rmsdB: Float) = Unit
+                    override fun onBufferReceived(buffer: ByteArray?) = Unit
+                    override fun onEndOfSpeech() = Unit
+                    override fun onEvent(eventType: Int, params: Bundle?) = Unit
+
+                    override fun onError(error: Int) {
+                        runOnUiThread {
+                            lastError = "STT error $error"
+                            state = AvatarState.IDLE
+                            motion = MotionEngine.primaryFor(AvatarState.IDLE)
+                        }
+                    }
+
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val text = partialResults
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                            ?.trim()
+                            .orEmpty()
+                        if (text.isNotEmpty()) runOnUiThread { transcript = text }
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        val text = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                            ?.trim()
+                            .orEmpty()
+
+                        runOnUiThread {
+                            transcript = text
+                            if (text.isBlank()) {
+                                state = AvatarState.IDLE
+                                motion = MotionEngine.primaryFor(AvatarState.IDLE)
+                            } else {
+                                // First complete voice loop: STT -> secure ElevenLabs TTS.
+                                // Replace this direct pass-through with the LLM turn endpoint next.
+                                ttsPlayer.speak(text)
+                            }
+                        }
+                    }
+                })
+
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                }
+                speechRecognizer.startListening(intent)
+            }
+
+            fun ensureMicThenListen() {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    startListening()
+                } else {
+                    onMicPermissionGranted = { startListening() }
+                    requestMic.launch(Manifest.permission.RECORD_AUDIO)
+                }
             }
 
             MaterialTheme {
@@ -86,22 +188,20 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Text(state.name, color = Color(0xFFB9D8FF))
                         Text(motion.id, color = Color(0xFF7FDBFF))
+                        if (transcript.isNotBlank()) Text(transcript, color = Color.White)
                         lastError?.let { Text(it, color = Color(0xFFFFB4AB)) }
                     }
 
                     FloatingActionButton(
                         onClick = {
-                            requestMic.launch(Manifest.permission.RECORD_AUDIO)
                             lastError = null
-
-                            if (state == AvatarState.SPEAKING || state == AvatarState.THINKING) {
-                                ttsPlayer.interrupt()
-                            } else if (state == AvatarState.LISTENING) {
-                                state = AvatarState.IDLE
-                                motion = MotionEngine.primaryFor(AvatarState.IDLE)
-                            } else {
-                                state = AvatarState.LISTENING
-                                motion = MotionEngine.primaryFor(AvatarState.LISTENING)
+                            when (state) {
+                                AvatarState.SPEAKING, AvatarState.THINKING -> {
+                                    ttsPlayer.interrupt()
+                                    ensureMicThenListen()
+                                }
+                                AvatarState.LISTENING -> stopListeningToIdle()
+                                else -> ensureMicThenListen()
                             }
                         },
                         shape = CircleShape,
