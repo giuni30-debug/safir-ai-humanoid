@@ -30,7 +30,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             var state by remember { mutableStateOf(AvatarState.IDLE) }
-            val motion = MotionEngine.primaryFor(state)
+            var motion by remember { mutableStateOf(MotionEngine.primaryFor(AvatarState.IDLE)) }
+
+            fun applyVoiceEvent(
+                event: VoiceSyncEvent,
+                behavior: SpeechBehavior = SpeechBehavior(),
+            ) {
+                val decision = VoiceSyncEngine.decide(event, behavior)
+                state = decision.state
+                motion = decision.motion
+            }
 
             MaterialTheme {
                 Box(
@@ -38,13 +47,21 @@ class MainActivity : ComponentActivity() {
                         .fillMaxSize()
                         .background(Color(0xFF102448))
                 ) {
-                    // Persistent avatar surface: state changes select another motion but do not
-                    // replace the player composable. mediaUri remains null until the durable
-                    // HeyGen motion file resolver is connected.
+                    // Persistent avatar surface. The motion player owns body-video playback only.
+                    // FIRST_AUDIO_FRAME and AUDIO_COMPLETED must come from the TTS/audio player,
+                    // not from body-motion video callbacks.
                     MotionPlayer(
                         mediaUri = null,
                         loop = motion.loopable,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        onPlaybackEnded = {
+                            // Body-motion completion is only authoritative for the explicit
+                            // speak-to-idle bridge. Speech completion itself is audio-authoritative.
+                            if (motion.id == MotionEngine.speakToIdle.id) {
+                                state = AvatarState.IDLE
+                                motion = MotionEngine.primaryFor(AvatarState.IDLE)
+                            }
+                        }
                     )
 
                     Column(
@@ -60,10 +77,17 @@ class MainActivity : ComponentActivity() {
                     FloatingActionButton(
                         onClick = {
                             requestMic.launch(Manifest.permission.RECORD_AUDIO)
-                            state = if (state == AvatarState.LISTENING) {
-                                AvatarState.IDLE
+
+                            if (state == AvatarState.SPEAKING || state == AvatarState.THINKING) {
+                                // Barge-in path: the future audio/TTS layer must cancel audio first,
+                                // then emit INTERRUPTED here.
+                                applyVoiceEvent(VoiceSyncEvent.INTERRUPTED)
+                            } else if (state == AvatarState.LISTENING) {
+                                state = AvatarState.IDLE
+                                motion = MotionEngine.primaryFor(AvatarState.IDLE)
                             } else {
-                                AvatarState.LISTENING
+                                state = AvatarState.LISTENING
+                                motion = MotionEngine.primaryFor(AvatarState.LISTENING)
                             }
                         },
                         shape = CircleShape,
