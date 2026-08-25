@@ -57,7 +57,7 @@ class AiReplyClient(
                 }
 
                 val json = JSONObject(raw)
-                val reply = json.optString("reply").trim()
+                val reply = cleanVisibleReply(json.optString("reply"))
                 if (reply.isBlank()) throw IllegalStateException("AI returned empty reply")
 
                 onSuccess(
@@ -76,6 +76,13 @@ class AiReplyClient(
                 runCatching { conn?.disconnect() }
             }
         }
+    }
+
+    private fun cleanVisibleReply(value: String): String {
+        return value
+            .replace(Regex("(?s)\\n?\\[\\[MEMORY:.*?]]"), "")
+            .replace(Regex("(?s)\\n?\\[\\[EXPENSE:.*?]]"), "")
+            .trim()
     }
 
     private companion object {
