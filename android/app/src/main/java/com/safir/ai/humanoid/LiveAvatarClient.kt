@@ -80,7 +80,7 @@ class LiveAvatarClient(
         this.onVideoReady = onVideoReady
         this.onDisconnected = onDisconnected
 
-        requestLiteSession(
+        requestLiteSessionWithRetry(
             avatarId = avatarId,
             onSuccess = { session ->
                 scope.launch {
@@ -256,8 +256,6 @@ class LiveAvatarClient(
         val request = Request.Builder().url(wsUrl).build()
         controlSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                // The socket is open, but LiveAvatar only accepts speech after its
-                // session.state_updated event reports connected.
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -329,6 +327,32 @@ class LiveAvatarClient(
 
         if (stopRemote && !sessionToken.isNullOrBlank()) stopSessionAsync(sessionToken)
         if (notifyDisconnected) onDisconnected?.invoke()
+    }
+
+    private fun requestLiteSessionWithRetry(
+        avatarId: String,
+        onSuccess: (LiveAvatarSession) -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        requestLiteSession(
+            avatarId = avatarId,
+            onSuccess = onSuccess,
+            onError = { firstError ->
+                thread(name = "safir-liveavatar-retry") {
+                    try {
+                        Thread.sleep(1_500L)
+                    } catch (_: InterruptedException) {
+                    }
+                    requestLiteSession(
+                        avatarId = avatarId,
+                        onSuccess = onSuccess,
+                        onError = { secondError ->
+                            onError("$firstError | retry: $secondError")
+                        },
+                    )
+                }
+            },
+        )
     }
 
     private fun requestLiteSession(
@@ -405,10 +429,9 @@ class LiveAvatarClient(
     }
 
     companion object {
-        // LiveAvatar LITE expects raw PCM: signed 16-bit little-endian, mono, 24 kHz.
         private const val BYTES_PER_SECOND = 48_000
-        private const val FIRST_CHUNK_BYTES = 28_800 // 600 ms
-        private const val NEXT_CHUNK_BYTES = BYTES_PER_SECOND // 1 second
+        private const val FIRST_CHUNK_BYTES = 28_800
+        private const val NEXT_CHUNK_BYTES = BYTES_PER_SECOND
     }
 }
 
