@@ -14,7 +14,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
@@ -54,6 +53,9 @@ class MainActivity : ComponentActivity() {
             val mainHandler = remember { Handler(Looper.getMainLooper()) }
             val aiClient = remember { AiReplyClient() }
             val memoryClient = remember { HumanoidMemoryClient() }
+            val humanoidVideoUri = remember {
+                "android.resource://$packageName/${R.raw.safir_humanoid_mars}"
+            }
 
             fun applyVoiceEvent(
                 event: VoiceSyncEvent,
@@ -297,29 +299,13 @@ class MainActivity : ComponentActivity() {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color(0xFF102448))
+                        .background(Color.Black)
                 ) {
                     MotionPlayer(
-                        mediaUri = null,
-                        loop = motion.loopable,
+                        mediaUri = humanoidVideoUri,
+                        loop = true,
                         modifier = Modifier.fillMaxSize(),
-                        onPlaybackEnded = {
-                            if (motion.id == MotionEngine.speakToIdle.id) {
-                                resetToIdle()
-                            }
-                        }
                     )
-
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(state.name, color = Color(0xFFB9D8FF))
-                        Text(motion.id, color = Color(0xFF7FDBFF))
-                        lastError?.let { Text(it, color = Color(0xFFFFB4AB)) }
-                    }
 
                     FloatingActionButton(
                         onClick = {
