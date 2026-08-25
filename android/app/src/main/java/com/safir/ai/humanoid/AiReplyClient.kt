@@ -1,9 +1,9 @@
 package com.safir.ai.humanoid
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.Locale
 import kotlin.concurrent.thread
 
 data class AiReply(
@@ -12,7 +12,7 @@ data class AiReply(
 )
 
 class AiReplyClient(
-    private val endpoint: String = "https://safir-orb.lovable.app/api/humanoid-reply",
+    private val endpoint: String = "https://wggaygghychkwhxvshfp.supabase.co/functions/v1/ai-assist",
 ) {
     fun request(
         text: String,
@@ -27,13 +27,20 @@ class AiReplyClient(
                     connectTimeout = 8_000
                     readTimeout = 20_000
                     doOutput = true
+                    setRequestProperty("Authorization", "Bearer $EVREN_PUBLISHABLE_KEY")
+                    setRequestProperty("apikey", EVREN_PUBLISHABLE_KEY)
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("Accept", "application/json")
                 }
 
+                val messages = JSONArray().put(
+                    JSONObject()
+                        .put("role", "user")
+                        .put("content", text)
+                )
+
                 val body = JSONObject()
-                    .put("text", text)
-                    .put("locale", Locale.getDefault().toLanguageTag())
+                    .put("messages", messages)
                     .toString()
 
                 conn.outputStream.use { out -> out.write(body.toByteArray(Charsets.UTF_8)) }
@@ -53,17 +60,13 @@ class AiReplyClient(
                 val reply = json.optString("reply").trim()
                 if (reply.isBlank()) throw IllegalStateException("AI returned empty reply")
 
-                val emotion = json.optString("emotion", "neutral")
-                val gesture = json.optString("gesture", "calm")
-                val energy = json.optDouble("energy", 0.5).coerceIn(0.0, 1.0)
-
                 onSuccess(
                     AiReply(
                         reply = reply,
                         behavior = SpeechBehavior(
-                            emotion = emotion,
-                            energy = energy,
-                            gesture = gesture,
+                            emotion = "neutral",
+                            energy = 0.55,
+                            gesture = "calm",
                         ),
                     )
                 )
@@ -73,5 +76,9 @@ class AiReplyClient(
                 runCatching { conn?.disconnect() }
             }
         }
+    }
+
+    private companion object {
+        const val EVREN_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndnZ2F5Z2doeWNoa3doeHZzaGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczOTc4NjUsImV4cCI6MjA5Mjk3Mzg2NX0.LM1JlM63U8RfPrEREjWdo5_WdEC286m8dbwA59wOeGU"
     }
 }
