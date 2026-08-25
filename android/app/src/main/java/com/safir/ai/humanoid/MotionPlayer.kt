@@ -21,14 +21,15 @@ import androidx.media3.ui.PlayerView
  * The player instance survives state changes so the avatar surface is never
  * replaced by another screen. Motion selection only swaps MediaItems.
  *
- * IMPORTANT: HeyGen source audio is always muted here. Safir's own ElevenLabs
- * voice is the single audio source, preventing narrator/agent overlap.
+ * HeyGen's ambient/background audio is intentionally kept at a low level.
+ * Safir's spoken voice still comes from ElevenLabs on top of it.
  */
 @Composable
 fun MotionPlayer(
     mediaUri: String?,
     loop: Boolean,
     modifier: Modifier = Modifier,
+    backgroundVolume: Float = 0.14f,
     onPlaybackStarted: () -> Unit = {},
     onPlaybackEnded: () -> Unit = {},
     onPlaybackError: (PlaybackException) -> Unit = {},
@@ -38,10 +39,12 @@ fun MotionPlayer(
     val currentOnPlaybackEnded = rememberUpdatedState(onPlaybackEnded)
     val currentOnPlaybackError = rememberUpdatedState(onPlaybackError)
 
+    val safeBackgroundVolume = backgroundVolume.coerceIn(0f, 1f)
+
     val player = remember {
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
-            volume = 0f
+            volume = safeBackgroundVolume
         }
     }
 
@@ -69,9 +72,9 @@ fun MotionPlayer(
         }
     }
 
-    LaunchedEffect(mediaUri, loop) {
+    LaunchedEffect(mediaUri, loop, safeBackgroundVolume) {
         player.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-        player.volume = 0f
+        player.volume = safeBackgroundVolume
 
         if (!mediaUri.isNullOrBlank()) {
             player.setMediaItem(MediaItem.fromUri(Uri.parse(mediaUri)))
@@ -93,7 +96,7 @@ fun MotionPlayer(
             }
         },
         update = { view ->
-            player.volume = 0f
+            player.volume = safeBackgroundVolume
             view.player = player
         }
     )
