@@ -31,6 +31,8 @@ class LiveAvatarClient(
     private var activeSessionToken: String? = null
     private var activeVideoTrack: VideoTrack? = null
     private var attachedRenderer: SurfaceViewRenderer? = null
+    private var onVideoReady: (() -> Unit)? = null
+    private var onDisconnected: (() -> Unit)? = null
 
     @Volatile
     var isConnected: Boolean = false
@@ -39,6 +41,8 @@ class LiveAvatarClient(
     fun connect(
         avatarId: String,
         onReady: (() -> Unit)? = null,
+        onVideoReady: (() -> Unit)? = null,
+        onDisconnected: (() -> Unit)? = null,
         onError: (String) -> Unit,
     ) {
         if (avatarId.isBlank()) {
@@ -47,15 +51,19 @@ class LiveAvatarClient(
         }
         if (isConnected) {
             onReady?.invoke()
+            if (activeVideoTrack != null) onVideoReady?.invoke()
             return
         }
+
+        this.onVideoReady = onVideoReady
+        this.onDisconnected = onDisconnected
 
         requestLiteSession(
             avatarId = avatarId,
             onSuccess = { session ->
                 scope.launch {
                     try {
-                        disconnectInternal(stopRemote = false)
+                        disconnectInternal(stopRemote = false, notifyDisconnected = false)
 
                         val nextRoom = LiveKit.create(appContext)
                         room = nextRoom
@@ -68,7 +76,10 @@ class LiveAvatarClient(
                                         val track = event.track
                                         if (track is VideoTrack) attachTrack(track)
                                     }
-                                    is RoomEvent.Disconnected -> isConnected = false
+                                    is RoomEvent.Disconnected -> {
+                                        isConnected = false
+                                        this@LiveAvatarClient.onDisconnected?.invoke()
+                                    }
                                     else -> Unit
                                 }
                             }
@@ -88,24 +99,24 @@ class LiveAvatarClient(
                         onReady?.invoke()
                     } catch (t: Throwable) {
                         isConnected = false
+                        this@LiveAvatarClient.onDisconnected?.invoke()
                         onError("LiveAvatar connect failed: ${t.message ?: t.javaClass.simpleName}")
                     }
                 }
             },
-            onError = onError,
+            onError = {
+                this.onDisconnected?.invoke()
+                onError(it)
+            },
         )
     }
 
     fun attachRenderer(renderer: SurfaceViewRenderer) {
         scope.launch {
             if (attachedRenderer === renderer) return@launch
-
             activeVideoTrack?.let { oldTrack ->
-                attachedRenderer?.let { oldRenderer ->
-                    runCatching { oldTrack.removeRenderer(oldRenderer) }
-                }
+                attachedRenderer?.let { oldRenderer -> runCatching { oldTrack.removeRenderer(oldRenderer) } }
             }
-
             attachedRenderer = renderer
             room?.initVideoRenderer(renderer)
             activeVideoTrack?.let { track -> runCatching { track.addRenderer(renderer) } }
@@ -120,12 +131,14 @@ class LiveAvatarClient(
     }
 
     fun disconnect() {
-        scope.launch { disconnectInternal(stopRemote = true) }
+        scope.launch { disconnectInternal(stopRemote = true, notifyDisconnected = true) }
     }
 
     fun release() {
         scope.launch {
-            disconnectInternal(stopRemote = true)
+            disconnectInternal(stopRemote = true, notifyDisconnected = false)
+            onVideoReady = null
+            onDisconnected = null
             scope.cancel()
         }
     }
@@ -133,25 +146,20 @@ class LiveAvatarClient(
     private fun attachTrack(track: VideoTrack) {
         val previous = activeVideoTrack
         val renderer = attachedRenderer
-
-        if (previous !== track && renderer != null) {
-            runCatching { previous?.removeRenderer(renderer) }
-        }
-
+        if (previous !== track && renderer != null) runCatching { previous?.removeRenderer(renderer) }
         activeVideoTrack = track
         if (renderer != null) runCatching { track.addRenderer(renderer) }
+        onVideoReady?.invoke()
     }
 
-    private suspend fun disconnectInternal(stopRemote: Boolean) {
+    private suspend fun disconnectInternal(stopRemote: Boolean, notifyDisconnected: Boolean) {
         val sessionToken = activeSessionToken
         activeSessionToken = null
         isConnected = false
 
         val currentTrack = activeVideoTrack
         val renderer = attachedRenderer
-        if (currentTrack != null && renderer != null) {
-            runCatching { currentTrack.removeRenderer(renderer) }
-        }
+        if (currentTrack != null && renderer != null) runCatching { currentTrack.removeRenderer(renderer) }
         activeVideoTrack = null
 
         eventJob?.cancel()
@@ -161,9 +169,8 @@ class LiveAvatarClient(
         room = null
         if (currentRoom != null) runCatching { currentRoom.disconnect() }
 
-        if (stopRemote && !sessionToken.isNullOrBlank()) {
-            stopSessionAsync(sessionToken)
-        }
+        if (stopRemote && !sessionToken.isNullOrBlank()) stopSessionAsync(sessionToken)
+        if (notifyDisconnected) onDisconnected?.invoke()
     }
 
     private fun requestLiteSession(
@@ -189,18 +196,17 @@ class LiveAvatarClient(
                 } else {
                     conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 }
-                if (status !in 200..299) {
-                    throw IllegalStateException("HTTP $status ${raw.take(300)}")
-                }
+                if (status !in 200..299) throw IllegalStateException("HTTP $status ${raw.take(300)}")
 
                 val json = JSONObject(raw)
-                val session = LiveAvatarSession(
-                    sessionToken = json.getString("session_token"),
-                    livekitUrl = json.getString("livekit_url"),
-                    livekitClientToken = json.getString("livekit_client_token"),
-                    wsUrl = json.optString("ws_url"),
+                onSuccess(
+                    LiveAvatarSession(
+                        sessionToken = json.getString("session_token"),
+                        livekitUrl = json.getString("livekit_url"),
+                        livekitClientToken = json.getString("livekit_client_token"),
+                        wsUrl = json.optString("ws_url"),
+                    )
                 )
-                onSuccess(session)
             } catch (t: Throwable) {
                 onError("LiveAvatar session failed: ${t.message ?: t.javaClass.simpleName}")
             } finally {
@@ -221,7 +227,6 @@ class LiveAvatarClient(
                 conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                 runCatching { conn.inputStream.close() }
             } catch (_: Throwable) {
-                // Best-effort cleanup only. Never block app shutdown on provider cleanup.
             } finally {
                 runCatching { conn?.disconnect() }
             }
