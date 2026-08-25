@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -46,6 +48,10 @@ class MainActivity : ComponentActivity() {
             var motion by remember { mutableStateOf(MotionEngine.primaryFor(AvatarState.IDLE)) }
             var lastError by remember { mutableStateOf<String?>(null) }
             var transcript by remember { mutableStateOf("") }
+            var recognitionActive by remember { mutableStateOf(false) }
+            var suppressClientError by remember { mutableStateOf(false) }
+
+            val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
             fun applyVoiceEvent(
                 event: VoiceSyncEvent,
@@ -75,16 +81,27 @@ class MainActivity : ComponentActivity() {
 
             DisposableEffect(speechRecognizer, ttsPlayer) {
                 onDispose {
+                    suppressClientError = true
+                    recognitionActive = false
                     runCatching { speechRecognizer?.cancel() }
                     runCatching { speechRecognizer?.destroy() }
                     ttsPlayer.release()
                 }
             }
 
-            fun stopListeningToIdle() {
-                runCatching { speechRecognizer?.cancel() }
+            fun resetToIdle() {
+                recognitionActive = false
                 state = AvatarState.IDLE
                 motion = MotionEngine.primaryFor(AvatarState.IDLE)
+            }
+
+            fun stopListeningToIdle() {
+                if (recognitionActive) {
+                    suppressClientError = true
+                    recognitionActive = false
+                    runCatching { speechRecognizer?.cancel() }
+                }
+                resetToIdle()
             }
 
             fun startListening() {
@@ -92,9 +109,12 @@ class MainActivity : ComponentActivity() {
                     lastError = "Speech recognition unavailable on this device"
                     return
                 }
+                if (recognitionActive) return
 
                 lastError = null
                 transcript = ""
+                suppressClientError = false
+                recognitionActive = true
                 state = AvatarState.LISTENING
                 motion = MotionEngine.primaryFor(AvatarState.LISTENING)
 
@@ -108,9 +128,17 @@ class MainActivity : ComponentActivity() {
 
                     override fun onError(error: Int) {
                         runOnUiThread {
+                            val benignClientError = error == SpeechRecognizer.ERROR_CLIENT && suppressClientError
+                            recognitionActive = false
+                            suppressClientError = false
+
+                            if (benignClientError) {
+                                if (state == AvatarState.LISTENING) resetToIdle()
+                                return@runOnUiThread
+                            }
+
                             lastError = "STT error $error"
-                            state = AvatarState.IDLE
-                            motion = MotionEngine.primaryFor(AvatarState.IDLE)
+                            resetToIdle()
                         }
                     }
 
@@ -131,14 +159,19 @@ class MainActivity : ComponentActivity() {
                             .orEmpty()
 
                         runOnUiThread {
+                            recognitionActive = false
+                            suppressClientError = true
                             transcript = text
+
                             if (text.isBlank()) {
-                                state = AvatarState.IDLE
-                                motion = MotionEngine.primaryFor(AvatarState.IDLE)
+                                resetToIdle()
                             } else {
-                                // First complete voice loop: STT -> secure ElevenLabs TTS.
-                                // Replace this direct pass-through with the LLM turn endpoint next.
-                                ttsPlayer.speak(text)
+                                state = AvatarState.THINKING
+                                motion = MotionEngine.primaryFor(AvatarState.THINKING)
+                                mainHandler.postDelayed({
+                                    suppressClientError = false
+                                    ttsPlayer.speak(text)
+                                }, 150L)
                             }
                         }
                     }
@@ -150,7 +183,13 @@ class MainActivity : ComponentActivity() {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 }
-                speechRecognizer.startListening(intent)
+
+                runCatching { speechRecognizer.startListening(intent) }
+                    .onFailure {
+                        recognitionActive = false
+                        lastError = "STT start failed"
+                        resetToIdle()
+                    }
             }
 
             fun ensureMicThenListen() {
@@ -174,8 +213,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         onPlaybackEnded = {
                             if (motion.id == MotionEngine.speakToIdle.id) {
-                                state = AvatarState.IDLE
-                                motion = MotionEngine.primaryFor(AvatarState.IDLE)
+                                resetToIdle()
                             }
                         }
                     )
@@ -198,7 +236,7 @@ class MainActivity : ComponentActivity() {
                             when (state) {
                                 AvatarState.SPEAKING, AvatarState.THINKING -> {
                                     ttsPlayer.interrupt()
-                                    ensureMicThenListen()
+                                    mainHandler.postDelayed({ ensureMicThenListen() }, 200L)
                                 }
                                 AvatarState.LISTENING -> stopListeningToIdle()
                                 else -> ensureMicThenListen()
