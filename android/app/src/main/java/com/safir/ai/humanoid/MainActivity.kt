@@ -118,27 +118,75 @@ class MainActivity : ComponentActivity() {
                 state = AvatarState.LISTENING
                 motion = MotionEngine.primaryFor(AvatarState.LISTENING)
 
+                var latestPartial = ""
+                var turnDispatched = false
+                var fallbackRunnable: Runnable? = null
+
+                fun dispatchRecognized(rawText: String) {
+                    if (turnDispatched) return
+                    val text = rawText.trim()
+                    if (text.isBlank()) {
+                        resetToIdle()
+                        return
+                    }
+
+                    turnDispatched = true
+                    fallbackRunnable?.let { mainHandler.removeCallbacks(it) }
+                    recognitionActive = false
+                    suppressClientError = true
+                    transcript = text
+                    state = AvatarState.THINKING
+                    motion = MotionEngine.primaryFor(AvatarState.THINKING)
+
+                    mainHandler.postDelayed({
+                        suppressClientError = false
+                        ttsPlayer.speak(text)
+                    }, 180L)
+                }
+
                 speechRecognizer.setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) = Unit
                     override fun onBeginningOfSpeech() = Unit
                     override fun onRmsChanged(rmsdB: Float) = Unit
                     override fun onBufferReceived(buffer: ByteArray?) = Unit
-                    override fun onEndOfSpeech() = Unit
                     override fun onEvent(eventType: Int, params: Bundle?) = Unit
+
+                    override fun onEndOfSpeech() {
+                        runOnUiThread {
+                            if (!turnDispatched && latestPartial.isNotBlank()) {
+                                val candidate = latestPartial
+                                val runnable = Runnable { dispatchRecognized(candidate) }
+                                fallbackRunnable = runnable
+                                mainHandler.postDelayed(runnable, 900L)
+                            }
+                        }
+                    }
 
                     override fun onError(error: Int) {
                         runOnUiThread {
                             val benignClientError = error == SpeechRecognizer.ERROR_CLIENT && suppressClientError
+                            val recoverableWithPartial =
+                                (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) &&
+                                    latestPartial.isNotBlank()
+
                             recognitionActive = false
-                            suppressClientError = false
 
-                            if (benignClientError) {
-                                if (state == AvatarState.LISTENING) resetToIdle()
-                                return@runOnUiThread
+                            when {
+                                turnDispatched -> Unit
+                                benignClientError -> {
+                                    suppressClientError = false
+                                    if (state == AvatarState.LISTENING) resetToIdle()
+                                }
+                                recoverableWithPartial -> {
+                                    suppressClientError = false
+                                    dispatchRecognized(latestPartial)
+                                }
+                                else -> {
+                                    suppressClientError = false
+                                    lastError = "STT error $error"
+                                    resetToIdle()
+                                }
                             }
-
-                            lastError = "STT error $error"
-                            resetToIdle()
                         }
                     }
 
@@ -148,7 +196,10 @@ class MainActivity : ComponentActivity() {
                             ?.firstOrNull()
                             ?.trim()
                             .orEmpty()
-                        if (text.isNotEmpty()) runOnUiThread { transcript = text }
+                        if (text.isNotEmpty()) {
+                            latestPartial = text
+                            runOnUiThread { transcript = text }
+                        }
                     }
 
                     override fun onResults(results: Bundle?) {
@@ -159,20 +210,7 @@ class MainActivity : ComponentActivity() {
                             .orEmpty()
 
                         runOnUiThread {
-                            recognitionActive = false
-                            suppressClientError = true
-                            transcript = text
-
-                            if (text.isBlank()) {
-                                resetToIdle()
-                            } else {
-                                state = AvatarState.THINKING
-                                motion = MotionEngine.primaryFor(AvatarState.THINKING)
-                                mainHandler.postDelayed({
-                                    suppressClientError = false
-                                    ttsPlayer.speak(text)
-                                }, 150L)
-                            }
+                            dispatchRecognized(if (text.isNotBlank()) text else latestPartial)
                         }
                     }
                 })
