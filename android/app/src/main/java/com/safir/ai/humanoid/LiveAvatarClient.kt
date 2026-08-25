@@ -1,6 +1,7 @@
 package com.safir.ai.humanoid
 
 import android.content.Context
+import android.util.Base64
 import io.livekit.android.LiveKit
 import io.livekit.android.events.RoomEvent
 import io.livekit.android.events.collect
@@ -14,9 +15,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 class LiveAvatarClient(
@@ -25,6 +34,9 @@ class LiveAvatarClient(
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val wsClient = OkHttpClient.Builder()
+        .pingInterval(30, TimeUnit.SECONDS)
+        .build()
 
     private var room: Room? = null
     private var eventJob: Job? = null
@@ -33,9 +45,19 @@ class LiveAvatarClient(
     private var attachedRenderer: SurfaceViewRenderer? = null
     private var onVideoReady: (() -> Unit)? = null
     private var onDisconnected: (() -> Unit)? = null
+    private var controlSocket: WebSocket? = null
+
+    private val speechLock = Any()
+    private var speechEventId: String? = null
+    private var speechBuffer = ByteArrayOutputStream()
+    private var firstSpeechChunk = true
 
     @Volatile
     var isConnected: Boolean = false
+        private set
+
+    @Volatile
+    var isControlConnected: Boolean = false
         private set
 
     fun connect(
@@ -95,6 +117,7 @@ class LiveAvatarClient(
                             .firstOrNull()
                         if (existing != null) attachTrack(existing)
 
+                        openControlSocket(session.wsUrl, onError)
                         isConnected = true
                         onReady?.invoke()
                     } catch (t: Throwable) {
@@ -130,6 +153,53 @@ class LiveAvatarClient(
         }
     }
 
+    fun beginSpeech() {
+        synchronized(speechLock) {
+            speechEventId = "safir-${UUID.randomUUID()}"
+            speechBuffer.reset()
+            firstSpeechChunk = true
+        }
+    }
+
+    fun pushSpeechPcm(pcm24kMono16: ByteArray) {
+        if (pcm24kMono16.isEmpty()) return
+        synchronized(speechLock) {
+            if (speechEventId == null) beginSpeech()
+            speechBuffer.write(pcm24kMono16)
+            flushSpeechBuffer(force = false)
+        }
+    }
+
+    fun endSpeech() {
+        synchronized(speechLock) {
+            val eventId = speechEventId ?: return
+            flushSpeechBuffer(force = true)
+            controlSocket?.send(
+                JSONObject()
+                    .put("type", "agent.speak_end")
+                    .put("event_id", eventId)
+                    .toString()
+            )
+            speechEventId = null
+            speechBuffer.reset()
+            firstSpeechChunk = true
+        }
+    }
+
+    fun interruptSpeech() {
+        synchronized(speechLock) {
+            speechEventId = null
+            speechBuffer.reset()
+            firstSpeechChunk = true
+        }
+        controlSocket?.send(
+            JSONObject()
+                .put("type", "agent.interrupt")
+                .put("event_id", "interrupt-${UUID.randomUUID()}")
+                .toString()
+        )
+    }
+
     fun disconnect() {
         scope.launch { disconnectInternal(stopRemote = true, notifyDisconnected = true) }
     }
@@ -139,8 +209,86 @@ class LiveAvatarClient(
             disconnectInternal(stopRemote = true, notifyDisconnected = false)
             onVideoReady = null
             onDisconnected = null
+            wsClient.dispatcher.executorService.shutdown()
             scope.cancel()
         }
+    }
+
+    private fun flushSpeechBuffer(force: Boolean) {
+        val eventId = speechEventId ?: return
+        if (!isControlConnected) return
+
+        var bytes = speechBuffer.toByteArray()
+        var target = if (firstSpeechChunk) FIRST_CHUNK_BYTES else NEXT_CHUNK_BYTES
+
+        while (bytes.size >= target || (force && bytes.isNotEmpty())) {
+            val count = if (bytes.size >= target) target else bytes.size
+            val chunk = bytes.copyOfRange(0, count)
+            bytes = bytes.copyOfRange(count, bytes.size)
+
+            val audio = Base64.encodeToString(chunk, Base64.NO_WRAP)
+            controlSocket?.send(
+                JSONObject()
+                    .put("type", "agent.speak")
+                    .put("event_id", eventId)
+                    .put("audio", audio)
+                    .toString()
+            )
+
+            firstSpeechChunk = false
+            target = NEXT_CHUNK_BYTES
+            if (!force && bytes.size < target) break
+        }
+
+        speechBuffer.reset()
+        if (bytes.isNotEmpty()) speechBuffer.write(bytes)
+    }
+
+    private fun openControlSocket(wsUrl: String, onError: (String) -> Unit) {
+        if (wsUrl.isBlank()) {
+            onError("LiveAvatar control WebSocket missing")
+            return
+        }
+
+        controlSocket?.close(1000, "replace")
+        isControlConnected = false
+
+        val request = Request.Builder().url(wsUrl).build()
+        controlSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                // The socket is open, but LiveAvatar only accepts speech after its
+                // session.state_updated event reports connected.
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val json = runCatching { JSONObject(text) }.getOrNull() ?: return
+                when (json.optString("type")) {
+                    "session.state_updated" -> {
+                        val state = json.optString("state").ifBlank {
+                            json.optJSONObject("data")?.optString("state").orEmpty()
+                        }
+                        if (state.equals("connected", ignoreCase = true)) {
+                            isControlConnected = true
+                        }
+                    }
+                    "agent.speak_ended" -> Unit
+                }
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                isControlConnected = false
+                webSocket.close(code, reason)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                isControlConnected = false
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                isControlConnected = false
+                onError("LiveAvatar control failed: ${t.message ?: t.javaClass.simpleName}")
+            }
+        })
     }
 
     private fun attachTrack(track: VideoTrack) {
@@ -156,6 +304,16 @@ class LiveAvatarClient(
         val sessionToken = activeSessionToken
         activeSessionToken = null
         isConnected = false
+        isControlConnected = false
+
+        synchronized(speechLock) {
+            speechEventId = null
+            speechBuffer.reset()
+            firstSpeechChunk = true
+        }
+
+        controlSocket?.close(1000, "disconnect")
+        controlSocket = null
 
         val currentTrack = activeVideoTrack
         val renderer = attachedRenderer
@@ -244,6 +402,13 @@ class LiveAvatarClient(
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json")
         }
+    }
+
+    companion object {
+        // LiveAvatar LITE expects raw PCM: signed 16-bit little-endian, mono, 24 kHz.
+        private const val BYTES_PER_SECOND = 48_000
+        private const val FIRST_CHUNK_BYTES = 28_800 // 600 ms
+        private const val NEXT_CHUNK_BYTES = BYTES_PER_SECOND // 1 second
     }
 }
 
