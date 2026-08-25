@@ -122,6 +122,14 @@ class MainActivity : ComponentActivity() {
                 var latestPartial = ""
                 var turnDispatched = false
                 var fallbackRunnable: Runnable? = null
+                var silenceRunnable: Runnable? = null
+
+                fun clearTurnTimers() {
+                    fallbackRunnable?.let { mainHandler.removeCallbacks(it) }
+                    silenceRunnable?.let { mainHandler.removeCallbacks(it) }
+                    fallbackRunnable = null
+                    silenceRunnable = null
+                }
 
                 fun dispatchRecognized(rawText: String) {
                     if (turnDispatched) return
@@ -132,9 +140,10 @@ class MainActivity : ComponentActivity() {
                     }
 
                     turnDispatched = true
-                    fallbackRunnable?.let { mainHandler.removeCallbacks(it) }
+                    clearTurnTimers()
                     recognitionActive = false
                     suppressClientError = true
+                    runCatching { speechRecognizer.stopListening() }
                     state = AvatarState.THINKING
                     motion = MotionEngine.primaryFor(AvatarState.THINKING)
 
@@ -169,6 +178,19 @@ class MainActivity : ComponentActivity() {
                         onSuccess = { context -> requestAi(context) },
                         onError = { requestAi("") },
                     )
+                }
+
+                fun armSilenceDetector() {
+                    if (turnDispatched || latestPartial.isBlank()) return
+                    silenceRunnable?.let { mainHandler.removeCallbacks(it) }
+                    val candidate = latestPartial
+                    val runnable = Runnable {
+                        if (!turnDispatched && candidate == latestPartial && latestPartial.isNotBlank()) {
+                            dispatchRecognized(latestPartial)
+                        }
+                    }
+                    silenceRunnable = runnable
+                    mainHandler.postDelayed(runnable, 850L)
                 }
 
                 speechRecognizer.setRecognitionListener(object : RecognitionListener {
@@ -210,6 +232,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 else -> {
                                     suppressClientError = false
+                                    clearTurnTimers()
                                     lastError = "STT error $error"
                                     resetToIdle()
                                 }
@@ -223,7 +246,10 @@ class MainActivity : ComponentActivity() {
                             ?.firstOrNull()
                             ?.trim()
                             .orEmpty()
-                        if (text.isNotEmpty()) latestPartial = text
+                        if (text.isNotEmpty()) {
+                            latestPartial = text
+                            runOnUiThread { armSilenceDetector() }
+                        }
                     }
 
                     override fun onResults(results: Bundle?) {
@@ -244,11 +270,15 @@ class MainActivity : ComponentActivity() {
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 800L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 500L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 300L)
                 }
 
                 runCatching { speechRecognizer.startListening(intent) }
                     .onFailure {
                         recognitionActive = false
+                        clearTurnTimers()
                         lastError = "STT start failed"
                         resetToIdle()
                     }
