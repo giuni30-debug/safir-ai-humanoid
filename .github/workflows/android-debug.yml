@@ -23,27 +23,16 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Restore last working launcher icon setup
+      - name: Verify Safir Humanoid adaptive launcher icon
         shell: bash
         run: |
           set -euo pipefail
           RES="android/app/src/main/res"
-          curl --fail --location --retry 3 \
-            'https://raw.githubusercontent.com/giuni30-debug/safir-ai-humanoid/24dfd1c09a594f5dd28570e70705b26e0d67fb5d/android/app/src/main/res/safir_launcher_icon.b64' \
-            --output /tmp/safir_launcher_icon.b64
-          base64 --decode /tmp/safir_launcher_icon.b64 > /tmp/safir_launcher_icon.jpg
-
-          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            dir="$RES/mipmap-${density}"
-            mkdir -p "$dir"
-            rm -f "$dir"/ic_launcher.* "$dir"/ic_launcher_round.*
-            cp /tmp/safir_launcher_icon.jpg "$dir/ic_launcher.jpg"
-            cp /tmp/safir_launcher_icon.jpg "$dir/ic_launcher_round.jpg"
-          done
-
-          rm -f "$RES/mipmap-anydpi-v26/ic_launcher.xml"
-          rm -f "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
-          file /tmp/safir_launcher_icon.jpg
+          test -s "$RES/drawable-nodpi/safir_launcher_icon.jpg"
+          test -s "$RES/drawable/ic_safir_foreground.xml"
+          test -s "$RES/mipmap-anydpi-v26/ic_launcher.xml"
+          test -s "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
+          file "$RES/drawable-nodpi/safir_launcher_icon.jpg"
 
       - name: Fetch latest Safir Mars Humanoid Base video
         run: |
@@ -58,6 +47,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: safir-ai-humanoid-restored-working-apk
+          name: safir-ai-humanoid-scanner-style-icon-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
