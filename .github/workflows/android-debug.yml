@@ -23,22 +23,20 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Install sharp full-size adaptive launcher icon
+      - name: Install full-size adaptive launcher icon
         shell: bash
         run: |
           set -euo pipefail
-          SRC_B64="android/app/src/main/res/safir_launcher_icon.b64"
           RES="android/app/src/main/res"
+          SRC_URL="https://raw.githubusercontent.com/giuni30-debug/safir-ai-humanoid/d23987ee3849a44bad647ca2edfc7703d389a661/android/app/src/main/res/drawable-nodpi/safir_launcher_art.jpg"
 
           mkdir -p "$RES/drawable-nodpi" "$RES/mipmap-anydpi-v26"
-          base64 --decode "$SRC_B64" > "$RES/drawable-nodpi/safir_launcher_icon.jpg"
+          curl --fail --location --retry 3 "$SRC_URL" --output "$RES/drawable-nodpi/safir_launcher_icon.jpg"
 
-          # Remove every old launcher source so nothing stale can override this icon.
           for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             dir="$RES/mipmap-${density}"
             mkdir -p "$dir"
             rm -f "$dir"/ic_launcher.* "$dir"/ic_launcher_round.*
-            # Legacy fallback only. Modern Android uses the adaptive icon below.
             cp "$RES/drawable-nodpi/safir_launcher_icon.jpg" "$dir/ic_launcher.jpg"
             cp "$RES/drawable-nodpi/safir_launcher_icon.jpg" "$dir/ic_launcher_round.jpg"
           done
@@ -60,9 +58,9 @@ jobs:
           EOF
 
           file "$RES/drawable-nodpi/safir_launcher_icon.jpg"
+          test -s "$RES/drawable-nodpi/safir_launcher_icon.jpg"
           test -s "$RES/mipmap-anydpi-v26/ic_launcher.xml"
           test -s "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
-          rm -f "$SRC_B64"
 
       - name: Fetch latest Safir Mars Humanoid Base video
         run: |
@@ -79,8 +77,8 @@ jobs:
         run: |
           set -euo pipefail
           APK="$(find android/app/build/outputs/apk/debug -name '*.apk' -type f | head -n1)"
-          unzip -Z1 "$APK" | grep -E 'res/(mipmap-anydpi-v26|drawable-nodpi).*(ic_launcher|safir_launcher_icon)' || true
           test -n "$APK"
+          unzip -Z1 "$APK" | grep -E 'res/(mipmap-anydpi-v26|drawable-nodpi).*(ic_launcher|safir_launcher_icon)' || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
