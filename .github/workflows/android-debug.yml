@@ -2,8 +2,8 @@ name: Android Debug APK
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,55 +12,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.10.2'
+          gradle-version: "8.10.2"
 
-      - name: Install full-size adaptive launcher icon
-        shell: bash
+      - name: Fetch Safir AI icon source
         run: |
-          set -euo pipefail
-          RES="android/app/src/main/res"
-          SRC_URL="https://raw.githubusercontent.com/giuni30-debug/safir-ai-humanoid/d23987ee3849a44bad647ca2edfc7703d389a661/android/app/src/main/res/drawable-nodpi/safir_launcher_art.jpg"
-
-          mkdir -p "$RES/drawable-nodpi" "$RES/mipmap-anydpi-v26"
-          curl --fail --location --retry 3 "$SRC_URL" --output "$RES/drawable-nodpi/safir_launcher_icon.jpg"
-
-          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            dir="$RES/mipmap-${density}"
-            mkdir -p "$dir"
-            rm -f "$dir"/ic_launcher.* "$dir"/ic_launcher_round.*
-            cp "$RES/drawable-nodpi/safir_launcher_icon.jpg" "$dir/ic_launcher.jpg"
-            cp "$RES/drawable-nodpi/safir_launcher_icon.jpg" "$dir/ic_launcher_round.jpg"
-          done
-
-          cat > "$RES/mipmap-anydpi-v26/ic_launcher.xml" <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@android:color/black" />
-              <foreground android:drawable="@drawable/safir_launcher_icon" />
-          </adaptive-icon>
-          EOF
-
-          cat > "$RES/mipmap-anydpi-v26/ic_launcher_round.xml" <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@android:color/black" />
-              <foreground android:drawable="@drawable/safir_launcher_icon" />
-          </adaptive-icon>
-          EOF
-
-          file "$RES/drawable-nodpi/safir_launcher_icon.jpg"
-          test -s "$RES/drawable-nodpi/safir_launcher_icon.jpg"
-          test -s "$RES/mipmap-anydpi-v26/ic_launcher.xml"
-          test -s "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
+          mkdir -p android/app/src/main/res/drawable-nodpi
+          curl --fail --location --retry 3 \
+            'https://raw.githubusercontent.com/giuni30-debug/safir-ai-humanoid/d23987ee3849a44bad647ca2edfc7703d389a661/android/app/src/main/res/drawable-nodpi/safir_launcher_art.jpg' \
+            --output android/app/src/main/res/drawable-nodpi/safir_launcher_icon.jpg
 
       - name: Fetch latest Safir Mars Humanoid Base video
         run: |
@@ -72,17 +40,9 @@ jobs:
       - name: Build debug APK
         run: gradle :android:app:assembleDebug --stacktrace
 
-      - name: Verify adaptive icon is packaged
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="$(find android/app/build/outputs/apk/debug -name '*.apk' -type f | head -n1)"
-          test -n "$APK"
-          unzip -Z1 "$APK" | grep -E 'res/(mipmap-anydpi-v26|drawable-nodpi).*(ic_launcher|safir_launcher_icon)' || true
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: safir-ai-humanoid-adaptive-icon-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: SafirAI-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
