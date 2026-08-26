@@ -23,6 +23,24 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Install exact Safir launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC_B64="android/app/src/main/res/safir_launcher_icon.b64"
+          base64 --decode "$SRC_B64" > /tmp/safir_launcher_icon.jpg
+          for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            dir="android/app/src/main/res/mipmap-${density}"
+            mkdir -p "$dir"
+            rm -f "$dir"/ic_launcher.* "$dir"/ic_launcher_round.*
+            cp /tmp/safir_launcher_icon.jpg "$dir/ic_launcher.jpg"
+            cp /tmp/safir_launcher_icon.jpg "$dir/ic_launcher_round.jpg"
+          done
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+          rm -f "$SRC_B64"
+          file /tmp/safir_launcher_icon.jpg
+
       - name: Fetch latest Safir Mars Humanoid Base video
         run: |
           mkdir -p android/app/src/main/res/raw
