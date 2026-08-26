@@ -1,0 +1,59 @@
+name: Install exact attached Safir AI launcher icon
+
+on:
+  push:
+    paths:
+      - '.icon-transfer/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reassemble exact attachment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .icon-transfer/part* | base64 --decode > /tmp/safir_launcher_art.jpg
+          echo "60ab48b33a1aac7de574568d5407adc105e711144916d4d6281aba4ef228ead5  /tmp/safir_launcher_art.jpg" | sha256sum --check --strict
+
+      - name: Install unchanged bytes into launcher resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            android/app/src/main/res/drawable-nodpi/safir_launcher_art.jpg
+            android/app/src/main/res/mipmap-mdpi/ic_launcher.jpg
+            android/app/src/main/res/mipmap-mdpi/ic_launcher_round.jpg
+            android/app/src/main/res/mipmap-hdpi/ic_launcher.jpg
+            android/app/src/main/res/mipmap-hdpi/ic_launcher_round.jpg
+            android/app/src/main/res/mipmap-xhdpi/ic_launcher.jpg
+            android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.jpg
+            android/app/src/main/res/mipmap-xxhdpi/ic_launcher.jpg
+            android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.jpg
+            android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.jpg
+            android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.jpg
+          )
+          for target in "${targets[@]}"; do
+            mkdir -p "$(dirname "$target")"
+            cp /tmp/safir_launcher_art.jpg "$target"
+          done
+          for target in "${targets[@]}"; do
+            echo "60ab48b33a1aac7de574568d5407adc105e711144916d4d6281aba4ef228ead5  $target" | sha256sum --check --strict
+          done
+
+      - name: Commit icon and remove transfer scaffolding
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android/app/src/main/res
+          git rm -r .icon-transfer
+          git rm .github/workflows/install-exact-attached-icon.yml
+          git commit -m "Apply exact attached Safir AI launcher icon"
+          git push
