@@ -12,8 +12,8 @@ android {
         applicationId = "com.safir.ai.humanoid"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
 
         buildConfigField("String", "SUPABASE_URL", "\"https://hsximwxfwkzbnjwlzfuy.supabase.co\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzeGltd3hmd2t6Ym5qd2x6ZnV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2Njk0NzUsImV4cCI6MjEwMzI0NTQ3NX0.w7v3e07av9vUfabJR2f4n8xRbEk9BzjECl112-_YwCQ\"")
