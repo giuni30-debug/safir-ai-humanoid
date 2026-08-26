@@ -4,8 +4,8 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:icon="@drawable/safir_launcher_art"
+        android:roundIcon="@drawable/safir_launcher_art"
         android:label="Safir AI"
         android:supportsRtl="true"
         android:theme="@style/Theme.SafirAI">
