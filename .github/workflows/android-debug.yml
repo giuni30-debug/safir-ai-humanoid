@@ -34,12 +34,28 @@ jobs:
           test -s "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
           file "$RES/drawable-nodpi/safir_launcher_icon.jpg"
 
-      - name: Fetch latest Safir Mars Humanoid Base video
+      - name: Restore stable Safir Mars Humanoid Base video
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p android/app/src/main/res/raw
-          curl --fail --location --retry 3 \
-            'https://files2.heygen.ai/aws_pacific/avatar_tmp/c9ff2ee1fa774b72867af9af69c824cd/vc4cc91f1dc324d07a9014acc1da87c8b/bac5ec2e661543c6a7c0530571143162.mp4?Expires=1788295323&Signature=qo8ETnPb5DIY5lIS5RgO7vE2Dn-1lgL8SITkCgpPbFOch9csG1DycRpt1RHR~rIaQTAg-aI-4bqzNV7~6v0MLGwANPTqLPq5F-Ap2XW66eZRYxnwmGvX4cBhbPMWDdmlKE71Uo-STGPdQtfx~wsdVi1WMFeLyjTbxP4hX-sFOZDLba4EKtPCNvdGJSOabWY7XG2yq9QV~NhDuz9ULLy5XpEfTGwxS4OetWnzQFghSLgW0vJrEmhcfrOtzTB1MdFbLGNYo5Tl~o99DxeoPhaY6m-jsxLmSThSdGZjJkDiyU7xqa0AT6DVK0TO4u7t5z-i2q~vFJPC4shp6zdJEGVInA__&Key-Pair-Id=K38HBHX5LX3X2H' \
-            --output android/app/src/main/res/raw/safir_humanoid_mars.mp4
+          set -euo pipefail
+          mkdir -p android/app/src/main/res/raw /tmp/safir-base-apk
+
+          RUN_ID="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android-debug.yml/runs?branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id')"
+          test -n "$RUN_ID"
+
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name safir-ai-humanoid-scanner-style-icon-apk \
+            --dir /tmp/safir-base-apk
+
+          BASE_APK="$(find /tmp/safir-base-apk -type f -name '*.apk' -print -quit)"
+          test -n "$BASE_APK"
+
+          unzip -p "$BASE_APK" res/raw/safir_humanoid_mars.mp4 \
+            > android/app/src/main/res/raw/safir_humanoid_mars.mp4
+
+          test -s android/app/src/main/res/raw/safir_humanoid_mars.mp4
 
       - name: Build debug APK
         run: gradle :android:app:assembleDebug --stacktrace
