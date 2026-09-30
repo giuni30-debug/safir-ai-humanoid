@@ -29,6 +29,8 @@ class TtsHttpPcmPlayer(
     fun speak(text: String) {
         cancel(notify = false)
 
+        val spokenText = TtsTextNormalizer.normalize(text)
+
         val turnId = turnCounter.incrementAndGet()
         activeTurnId = turnId
         onEvent(VoiceSyncEvent.TURN_STARTED)
@@ -51,7 +53,7 @@ class TtsHttpPcmPlayer(
                 activeConnection = conn
 
                 val body = JSONObject()
-                    .put("text", text)
+                    .put("text", spokenText)
                     .put("model_id", "eleven_flash_v2_5")
                     .put("output_format", "mp3_44100_128")
                     .toString()
