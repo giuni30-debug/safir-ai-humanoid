@@ -156,6 +156,9 @@ class MainActivity : ComponentActivity() {
                                 result.memories.forEach { (kind, content) ->
                                     memoryClient.storeMemory(kind, content)
                                 }
+                                result.forgets.forEach { target ->
+                                    memoryClient.storeForget(target)
+                                }
                                 runOnUiThread {
                                     pendingBehavior = result.behavior
                                     suppressClientError = false
