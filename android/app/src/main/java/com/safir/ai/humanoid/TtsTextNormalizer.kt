@@ -74,7 +74,7 @@ object TtsTextNormalizer {
         result = result
             .replace("&", " și ")
             .replace(Regex("\\s+"), " ")
-            .replace(Regex("\\s+([,.;!?])"), "$1")
+            .replace(Regex("\\s+([,.;!?])"), "\$1")
             .trim()
 
         return result
