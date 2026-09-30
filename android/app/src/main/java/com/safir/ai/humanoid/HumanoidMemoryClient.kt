@@ -39,9 +39,9 @@ class HumanoidMemoryClient(
                     if (currency.isNotBlank()) lines += "Default currency: $currency"
                 }
 
+                val forgetTargets = mutableListOf<String>()
                 val memories = json.optJSONArray("memories")
                 if (memories != null && memories.length() > 0) {
-                    val forgetTargets = mutableListOf<String>()
                     for (i in 0 until memories.length()) {
                         val item = memories.optJSONObject(i) ?: continue
                         val kind = item.optString("kind").trim()
@@ -80,7 +80,9 @@ class HumanoidMemoryClient(
                         val item = turns.optJSONObject(i) ?: continue
                         val role = item.optString("role").trim()
                         val content = item.optString("content").trim()
-                        if (role.isNotBlank() && content.isNotBlank()) lines += "- $role: $content"
+                        if (role.isBlank() || content.isBlank()) continue
+                        if (forgetTargets.any { target -> memoryMatchesForget(content, target) }) continue
+                        lines += "- $role: $content"
                     }
                 }
 
