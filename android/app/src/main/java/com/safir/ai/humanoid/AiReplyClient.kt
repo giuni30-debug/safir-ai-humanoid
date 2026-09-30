@@ -10,6 +10,7 @@ data class AiReply(
     val reply: String,
     val behavior: SpeechBehavior,
     val memories: List<Pair<String, String>> = emptyList(),
+    val forgets: List<String> = emptyList(),
 )
 
 class AiReplyClient(
@@ -41,6 +42,8 @@ class AiReplyClient(
                     append("Do not repeat the user's question. Give the useful answer immediately. ")
                     append("Use the Safir memory context below only when relevant. Do not mention that memory context exists. ")
                     append("When the user explicitly asks you to remember a durable fact, preference, person, project detail or expense, append one hidden tag at the end in the form [[MEMORY:fact text]] or [[EXPENSE:expense text]]. ")
+                    append("When the user explicitly asks to cancel, delete or forget a previously saved appointment, reminder, expense, fact or preference, append exactly one hidden tag [[FORGET:target text]] that identifies the saved item to suppress. Do not also emit MEMORY or EXPENSE for that same item. ")
+                    append("If the forget target is ambiguous, ask a short clarification instead of emitting FORGET. Forget directives override older memory and recent-turn references to the cancelled item. ")
                     append("Do not invent memories.\n")
                     if (memoryContext.isNotBlank()) {
                         append("SAFIR OWN MEMORY:\n")
@@ -80,6 +83,7 @@ class AiReplyClient(
                 val json = JSONObject(raw)
                 val rawReply = json.optString("reply")
                 val extractedMemories = extractMemoryTags(rawReply)
+                val extractedForgets = extractForgetTags(rawReply)
                 val reply = cleanVisibleReply(rawReply)
                 if (reply.isBlank()) throw IllegalStateException("AI returned empty reply")
 
@@ -92,6 +96,7 @@ class AiReplyClient(
                             gesture = "calm",
                         ),
                         memories = extractedMemories,
+                        forgets = extractedForgets,
                     )
                 )
             } catch (t: Throwable) {
@@ -112,10 +117,20 @@ class AiReplyClient(
         return result
     }
 
+    private fun extractForgetTags(value: String): List<String> {
+        return Regex("(?s)\\[\\[FORGET:(.*?)]]")
+            .findAll(value)
+            .map { it.groupValues[1].trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .toList()
+    }
+
     private fun cleanVisibleReply(value: String): String {
         return value
             .replace(Regex("(?s)\\n?\\[\\[MEMORY:.*?]]"), "")
             .replace(Regex("(?s)\\n?\\[\\[EXPENSE:.*?]]"), "")
+            .replace(Regex("(?s)\\n?\\[\\[FORGET:.*?]]"), "")
             .trim()
     }
 
