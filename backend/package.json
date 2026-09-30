@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@vercel/functions": "^2.2.2",
+    "@vercel/functions": "^3.7.1",
     "ws": "^8.18.3"
   },
   "devDependencies": {
