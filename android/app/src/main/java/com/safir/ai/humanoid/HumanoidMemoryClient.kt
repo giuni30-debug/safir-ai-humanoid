@@ -41,14 +41,35 @@ class HumanoidMemoryClient(
 
                 val memories = json.optJSONArray("memories")
                 if (memories != null && memories.length() > 0) {
-                    lines += "Persistent memories:"
+                    val forgetTargets = mutableListOf<String>()
                     for (i in 0 until memories.length()) {
                         val item = memories.optJSONObject(i) ?: continue
+                        val kind = item.optString("kind").trim()
+                        val content = item.optString("content").trim()
+                        if (kind.equals("forget", ignoreCase = true) || content.startsWith("FORGET:", ignoreCase = true)) {
+                            val target = content.substringAfter(":", content).trim()
+                            if (target.isNotBlank()) forgetTargets += target
+                        }
+                    }
+
+                    val visibleMemories = mutableListOf<String>()
+                    for (i in 0 until memories.length()) {
+                        val item = memories.optJSONObject(i) ?: continue
+                        val kind = item.optString("kind").trim()
                         val title = item.optString("title").trim()
                         val content = item.optString("content").trim()
-                        if (content.isNotBlank()) {
-                            lines += if (title.isBlank()) "- $content" else "- $title: $content"
-                        }
+                        if (content.isBlank()) continue
+                        if (kind.equals("forget", ignoreCase = true) || content.startsWith("FORGET:", ignoreCase = true)) continue
+
+                        val candidate = listOf(title, content).filter { it.isNotBlank() }.joinToString(" ")
+                        if (forgetTargets.any { target -> memoryMatchesForget(candidate, target) }) continue
+
+                        visibleMemories += if (title.isBlank()) "- $content" else "- $title: $content"
+                    }
+
+                    if (visibleMemories.isNotEmpty()) {
+                        lines += "Persistent memories:"
+                        lines += visibleMemories
                     }
                 }
 
@@ -101,6 +122,45 @@ class HumanoidMemoryClient(
                 .put("content", safeContent)
                 .put("importance", 3)
         )
+    }
+
+    fun storeForget(target: String) {
+        val safeTarget = target.trim()
+        if (safeTarget.isBlank()) return
+        val marker = "FORGET: " + safeTarget.replace(Regex("\\s+"), " ").take(500)
+
+        postAsync(
+            threadName = "safir-memory-forget",
+            body = JSONObject()
+                .put("action", "store_memory")
+                .put("kind", "forget")
+                .put("title", "FORGET")
+                .put("content", marker)
+                .put("importance", 5)
+        )
+    }
+
+    private fun memoryMatchesForget(memory: String, target: String): Boolean {
+        val memoryNormalized = normalizeForMatch(memory)
+        val targetNormalized = normalizeForMatch(target)
+        if (memoryNormalized.isBlank() || targetNormalized.isBlank()) return false
+        if (memoryNormalized.contains(targetNormalized) || targetNormalized.contains(memoryNormalized)) return true
+
+        val memoryTokens = memoryNormalized.split(" ").filter { it.length >= 3 }.toSet()
+        val targetTokens = targetNormalized.split(" ").filter { it.length >= 3 }.toSet()
+        if (memoryTokens.isEmpty() || targetTokens.isEmpty()) return false
+
+        val overlap = memoryTokens.intersect(targetTokens).size
+        val required = if (targetTokens.size <= 2) targetTokens.size else maxOf(2, (targetTokens.size * 2 + 2) / 3)
+        return overlap >= required
+    }
+
+    private fun normalizeForMatch(value: String): String {
+        return value
+            .lowercase()
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
     }
 
     private fun postAsync(threadName: String, body: JSONObject) {
